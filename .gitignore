@@ -1,0 +1,31 @@
+# Secrets / local env
+.env
+**/.env
+!.env.example
+!**/.env.example
+azure/.env
+azure/.last-mcp-bearer.txt
+azure/.last-mcp-url.txt
+
+# Python / Playwright
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+scroller/.venv/
+scroller/.profiles/
+scroller/.playwright-browsers/
+scroller/out/
+*.log
+
+# Packaging / IDE
+*.zip
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local Azure CLI leftovers
+.azure/

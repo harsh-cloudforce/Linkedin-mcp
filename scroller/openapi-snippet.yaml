@@ -1,0 +1,74 @@
+# Optional OpenAPI sketch for REST /scan (MCP is the primary interface).
+openapi: 3.0.3
+info:
+  title: LinkedIn Feed Scroller
+  version: 0.1.0
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /scan:
+    post:
+      operationId: run_linkedin_feed_scan
+      summary: Scroll LinkedIn home feed and return posts
+      description: >
+        Opens a browser with the user's saved LinkedIn session,
+        scrolls the home feed, and returns structured posts as JSON.
+      parameters:
+        - in: header
+          name: X-Api-Key
+          schema:
+            type: string
+          required: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  type: string
+                  description: Stable per-person id (e.g. email alias)
+                  example: alex.nguyen
+                maxPosts:
+                  type: integer
+                  default: 50
+                maxScrolls:
+                  type: integer
+                  default: 15
+                headed:
+                  type: boolean
+                  default: true
+                feedUrl:
+                  type: string
+                  default: https://www.linkedin.com/feed/
+      responses:
+        "200":
+          description: Scan result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId: { type: string }
+                  scannedAt: { type: string, format: date-time }
+                  postCount: { type: integer }
+                  loginRequired: { type: boolean }
+                  message: { type: string }
+                  posts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        author: { type: string }
+                        headline: { type: string }
+                        text: { type: string }
+                        url: { type: string }
+                        socialProof: { type: string }
+                        rank: { type: integer }

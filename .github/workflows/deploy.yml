@@ -1,0 +1,64 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scroller/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_RESOURCE_GROUP: rg-linkedin-market-pulse
+  AZURE_CONTAINER_APP: linkedin-feed-scroller
+  AZURE_ACR: acrlinpulse12449
+  PUBLIC_BASE_URL: https://linkedin-feed-scroller.icyplant-a283531a.eastus2.azurecontainerapps.io
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build image in ACR
+        run: |
+          TAG="gha-${GITHUB_SHA::8}"
+          echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
+          az acr build \
+            -r "$AZURE_ACR" \
+            -t "${AZURE_CONTAINER_APP}:${TAG}" \
+            -t "${AZURE_CONTAINER_APP}:latest" \
+            -f scroller/Dockerfile \
+            scroller
+
+      - name: Update Container App
+        run: |
+          az containerapp update \
+            -n "$AZURE_CONTAINER_APP" \
+            -g "$AZURE_RESOURCE_GROUP" \
+            --image "${AZURE_ACR}.azurecr.io/${AZURE_CONTAINER_APP}:${IMAGE_TAG}" \
+            --set-env-vars \
+              "DEFAULT_HEADED=false" \
+              "REMOTE_LOGIN_ENABLED=true" \
+              "PROFILES_DIR=/data/profiles" \
+              "DEFAULT_LOGIN_WAIT_SECONDS=600" \
+              "PUBLIC_BASE_URL=${PUBLIC_BASE_URL}"
+
+      - name: Health check
+        run: |
+          sleep 15
+          curl -fsS "${PUBLIC_BASE_URL}/healthz"
+          echo
