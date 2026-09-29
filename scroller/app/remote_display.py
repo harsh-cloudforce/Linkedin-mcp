@@ -24,7 +24,6 @@ LOG_DIR = Path(os.getenv("REMOTE_DISPLAY_LOG_DIR", "/tmp/remote-display"))
 class RemoteDisplay:
     display: str  # e.g. ":99"
     vnc_port: int
-    ws_port: int
     processes: list[subprocess.Popen] = field(default_factory=list)
 
     @property
@@ -38,23 +37,13 @@ _active: RemoteDisplay | None = None
 
 
 def remote_login_available() -> bool:
-    return bool(shutil.which("Xvfb") and shutil.which("x11vnc") and _websockify_cmd())
+    # websockify not required — Starlette bridges browser WS ↔ x11vnc TCP directly
+    return bool(shutil.which("Xvfb") and shutil.which("x11vnc"))
 
 
 def novnc_static_root() -> Path | None:
     if NOVNC_ROOT.is_dir():
         return NOVNC_ROOT
-    return None
-
-
-def _websockify_cmd() -> list[str] | None:
-    """Prefer python -m websockify (pip) for a predictable WS server; fall back to PATH."""
-    py = shutil.which("python3") or shutil.which("python")
-    if py:
-        return [py, "-m", "websockify"]
-    exe = shutil.which("websockify")
-    if exe:
-        return [exe]
     return None
 
 
@@ -73,22 +62,21 @@ def display_ready() -> bool:
     for p in d.processes:
         if p.poll() is not None:
             return False
-    return _port_open("127.0.0.1", d.vnc_port) and _port_open("127.0.0.1", d.ws_port)
+    return _port_open("127.0.0.1", d.vnc_port)
 
 
 def start_remote_display(
     *,
     display_num: int = 99,
     vnc_port: int = 5900,
-    ws_port: int = 6080,
 ) -> RemoteDisplay:
-    """Start Xvfb + x11vnc + websockify. One active session at a time (ACA single replica)."""
+    """Start Xvfb + x11vnc. One active session at a time (ACA single replica)."""
     global _active
     stop_remote_display()
 
     if not remote_login_available():
         raise RuntimeError(
-            "Remote login requires Xvfb, x11vnc, and websockify (install in the container image)."
+            "Remote login requires Xvfb and x11vnc (install in the container image)."
         )
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -97,7 +85,6 @@ def start_remote_display(
 
     xvfb_log = (LOG_DIR / "xvfb.log").open("ab", buffering=0)
     x11_log = (LOG_DIR / "x11vnc.log").open("ab", buffering=0)
-    ws_log = (LOG_DIR / "websockify.log").open("ab", buffering=0)
 
     xvfb = subprocess.Popen(
         [
@@ -153,36 +140,8 @@ def start_remote_display(
         _kill_all(procs)
         raise RuntimeError("x11vnc did not open VNC port")
 
-    ws_cmd = _websockify_cmd()
-    assert ws_cmd is not None
-    # Bind explicitly on loopback; no --web (Starlette serves noVNC UI).
-    websockify = subprocess.Popen(
-        [
-            *ws_cmd,
-            "--heartbeat=30",
-            f"127.0.0.1:{ws_port}",
-            f"127.0.0.1:{vnc_port}",
-        ],
-        stdout=ws_log,
-        stderr=subprocess.STDOUT,
-    )
-    procs.append(websockify)
-    for _ in range(20):
-        if websockify.poll() is not None:
-            _kill_all(procs)
-            raise RuntimeError("websockify failed to start (see /tmp/remote-display/websockify.log)")
-        if _port_open("127.0.0.1", ws_port):
-            break
-        time.sleep(0.25)
-    else:
-        _kill_all(procs)
-        raise RuntimeError("websockify did not open WS port")
-
-    print(
-        f"[remote-display] ready display={display} vnc={vnc_port} ws={ws_port}",
-        flush=True,
-    )
-    _active = RemoteDisplay(display=display, vnc_port=vnc_port, ws_port=ws_port, processes=procs)
+    print(f"[remote-display] ready display={display} vnc={vnc_port}", flush=True)
+    _active = RemoteDisplay(display=display, vnc_port=vnc_port, processes=procs)
     return _active
 
 
@@ -216,14 +175,16 @@ def _kill_all(procs: list[subprocess.Popen]) -> None:
 
 
 def build_login_url(public_base: str, access_token: str) -> str:
-    """Full URL the agent must show unchanged (include /login/ prefix)."""
+    """Full URL the agent must show unchanged (include /login/ prefix).
+
+    path MUST be absolute (/websockify). A relative path=websockify from
+    /login/vnc.html makes the browser open /login/websockify → connection fails.
+    """
     base = public_base.rstrip("/")
-    # path= is the websocket path noVNC opens; token must be on that path so
-    # static assets under /login/ load without ?token= on every request.
     return (
         f"{base}/login/vnc.html"
         f"?autoconnect=true&resize=scale"
-        f"&path=websockify%3Ftoken%3D{access_token}"
+        f"&path=/websockify"
         f"&token={access_token}"
     )
 
@@ -237,9 +198,7 @@ def session_summary() -> dict[str, Any]:
         "ready": display_ready(),
         "display": d.display,
         "vnc_port": d.vnc_port,
-        "ws_port": d.ws_port,
         "novnc_root": str(novnc_static_root()),
         "vnc_port_open": _port_open("127.0.0.1", d.vnc_port),
-        "ws_port_open": _port_open("127.0.0.1", d.ws_port),
         "process_alive": all(p.poll() is None for p in d.processes),
     }

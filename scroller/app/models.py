@@ -29,6 +29,8 @@ class FeedPost(BaseModel):
     text: Optional[str] = None
     url: Optional[str] = None
     socialProof: Optional[str] = None
+    postedAt: Optional[str] = None  # LinkedIn relative time e.g. "2h", "1d"
+    images: list[str] = Field(default_factory=list)
     rank: int
 
 

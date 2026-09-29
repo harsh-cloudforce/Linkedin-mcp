@@ -6,8 +6,9 @@
 azure/.env
 azure/.last-mcp-bearer.txt
 azure/.last-mcp-url.txt
+azure/.github-oidc-secrets.txt
 
-# Python / Playwright
+# Python / Playwright / webapp
 **/__pycache__/
 *.py[cod]
 .pytest_cache/
@@ -17,6 +18,8 @@ scroller/.venv/
 scroller/.profiles/
 scroller/.playwright-browsers/
 scroller/out/
+webapp/.venv/
+webapp/data/
 *.log
 
 # Packaging / IDE

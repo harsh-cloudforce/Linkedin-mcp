@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · Market Pulse</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <h1 class="brand"><i class="brand-mark" aria-hidden="true"></i> Market <span>Pulse</span></h1>
+      <nav>
+        <a href="/">Briefs</a>
+        <a class="active" href="/settings">Settings</a>
+        <a href="/logout">Log out</a>
+      </nav>
+    </div>
+  </div>
+
+  <div class="page page-wide">
+    {% if flash %}
+    <div class="flash {% if flash_error %}error{% endif %}">{{ flash }}</div>
+    {% endif %}
+
+    {% if session_user.is_admin %}
+    <div class="panel">
+      <div class="panel-head"><h2>Users</h2></div>
+      <div class="panel-body">
+        <p class="hint">Invite-only webapp logins (usually Cloudforce email). LinkedIn scan identity is separate — users type any LinkedIn email on Briefs.</p>
+        <form method="post" action="/ui/users/add" class="form-stack form-stack-wide">
+          <div class="form-row form-row-4">
+            <label class="field">
+              <span>Email</span>
+              <input name="email" type="email" required placeholder="teammate@company.com" />
+            </label>
+            <label class="field">
+              <span>Display name</span>
+              <input name="display_name" placeholder="Optional" />
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <input name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="You choose" />
+            </label>
+            <label class="field">
+              <span>Role</span>
+              <select name="role">
+                <option value="member" selected>Member</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+          </div>
+          <div>
+            <button type="submit" class="primary">Add user</button>
+          </div>
+        </form>
+
+        {% if users %}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Email</th><th>Role</th><th>Active</th><th></th></tr></thead>
+            <tbody>
+              {% for u in users %}
+              <tr>
+                <td>{{ u.user_id }}{% if u.user_id == session_user.email %} <span class="muted">(you)</span>{% endif %}</td>
+                <td>{% if u.is_admin %}<span class="pill ok">admin</span>{% else %}member{% endif %}</td>
+                <td>{% if u.active %}<span class="pill ok">yes</span>{% else %}<span class="pill bad">no</span>{% endif %}</td>
+                <td class="row-actions">
+                  {% if u.user_id != session_user.email %}
+                    {% if u.is_admin %}
+                    <form method="post" action="/ui/users/{{ u.id }}/role" style="display:inline">
+                      <input type="hidden" name="role" value="member" />
+                      <button type="submit" class="linkish">Make member</button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="/ui/users/{{ u.id }}/role" style="display:inline">
+                      <input type="hidden" name="role" value="admin" />
+                      <button type="submit" class="linkish">Make admin</button>
+                    </form>
+                    {% endif %}
+                    {% if u.active %}
+                    <form method="post" action="/ui/users/{{ u.id }}/deactivate" style="display:inline">
+                      <button type="submit" class="linkish">Deactivate</button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="/ui/users/{{ u.id }}/activate" style="display:inline">
+                      <button type="submit" class="linkish">Activate</button>
+                    </form>
+                    {% endif %}
+                  {% endif %}
+                  <form method="post" action="/ui/users/{{ u.id }}/set-password" class="inline-pw" style="display:inline-flex;gap:0.35rem;align-items:center">
+                    <input name="password" type="password" required minlength="8" placeholder="New password" style="width:8.5rem;height:1.8rem;font-size:12px" />
+                    <button type="submit" class="linkish">Set password</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="empty">No users yet</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Integration API keys</h2></div>
+      <div class="panel-body">
+        <p class="hint">
+          Admin-only. Named keys for nebulaONE / curl. <strong>All active keys work</strong> until you revoke them
+          (like GitHub tokens). The full secret is shown once in a popup — after that only the name and prefix remain.
+          Status:
+          {% if status.integrationKeySet %}<span class="pill ok">{{ status.activeApiKeyCount }} active</span>{% else %}<span class="pill bad">none</span>{% endif %}
+        </p>
+        <form method="post" action="/ui/api-keys/create" class="form-row" style="align-items:end;max-width:28rem;margin-bottom:1rem">
+          <label class="field" style="flex:1">
+            <span>Key name</span>
+            <input name="name" required maxlength="128" placeholder="nebulaONE prod" />
+          </label>
+          <button type="submit" class="primary">Create key</button>
+        </form>
+
+        {% if api_keys %}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              {% for k in api_keys %}
+              <tr>
+                <td>{{ k.name }}</td>
+                <td><code>{{ k.key_prefix }}…</code></td>
+                <td class="num">{{ k.created_at.strftime('%Y-%m-%d %H:%M') if k.created_at else '—' }} UTC</td>
+                <td>{% if k.active %}<span class="pill ok">active</span>{% else %}<span class="pill bad">revoked</span>{% endif %}</td>
+                <td class="row-actions">
+                  {% if k.active %}
+                  <form method="post" action="/ui/api-keys/{{ k.id }}/revoke" style="display:inline" onsubmit="return confirm('Revoke this key? Apps using it will stop working.');">
+                    <button type="submit" class="linkish">Revoke</button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="empty">No API keys yet — create one for nebulaONE</p>
+        {% endif %}
+
+        <div class="api-ref">
+          <h3>API / curl reference</h3>
+          <p class="hint">Base URL: <code>{{ base_url }}</code></p>
+          <pre class="code-block"># Health
+curl {{ base_url }}/healthz
+
+# List briefs
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  "{{ base_url }}/api/integration/v1/briefs?userId=you@company.com"
+
+# nebulaONE MCP
+# URL: {{ base_url }}/mcp
+# Header: Authorization: Bearer YOUR_API_KEY</pre>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="panel" id="my-password">
+      <div class="panel-head"><h2>My password</h2></div>
+      <div class="panel-body">
+        <p class="hint">Change the password for <strong>{{ session_user.email }}</strong>. Saved to durable storage so it survives redeploys.</p>
+        <form method="post" action="/ui/change-my-password" class="form-stack" style="max-width:28rem">
+          <label class="field">
+            <span>Current password</span>
+            <input name="current_password" type="password" required autocomplete="current-password" />
+          </label>
+          <label class="field">
+            <span>New password</span>
+            <input name="new_password" type="password" required minlength="8" autocomplete="new-password" />
+          </label>
+          <label class="field">
+            <span>Confirm new password</span>
+            <input name="confirm_password" type="password" required minlength="8" autocomplete="new-password" />
+          </label>
+          <div>
+            <button type="submit" class="primary">Update my password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel" id="linkedin-session">
+      <div class="panel-head"><h2>LinkedIn connection</h2></div>
+      <div class="panel-body">
+        <p class="hint">
+          Non-technical users should use <strong>Connect LinkedIn</strong> on the Briefs page —
+          it opens a sign-in link and saves the session automatically. No DevTools needed.
+        </p>
+        <p class="hint">Go to <a href="/">Briefs</a>, enter the LinkedIn email, click <strong>Connect LinkedIn</strong>, then <strong>Open sign-in</strong>.</p>
+        <details class="advanced-box">
+          <summary>Advanced: paste cookie (optional)</summary>
+          <p class="hint" style="margin-top:0.75rem">
+            Only if Connect LinkedIn is unavailable. On linkedin.com → DevTools → Application → Cookies → <code>li_at</code>.
+          </p>
+          <form method="post" action="/ui/save-linkedin-session" class="form-stack">
+            <label class="field">
+              <span>LinkedIn email (scan identity)</span>
+              <input name="linkedin_email" type="email" required
+                value="{{ preferred_linkedin or '' }}"
+                placeholder="personal@gmail.com" />
+            </label>
+            <label class="field">
+              <span>li_at cookie value</span>
+              <input name="li_at" type="password" required autocomplete="off"
+                placeholder="Paste full li_at value" />
+            </label>
+            <label class="field">
+              <span>li_a cookie (optional)</span>
+              <input name="li_a" type="password" autocomplete="off" placeholder="Optional" />
+            </label>
+            <div>
+              <button type="submit" class="primary">Save LinkedIn session</button>
+            </div>
+          </form>
+        </details>
+      </div>
+    </div>
+
+    <form method="post" action="/settings" class="settings-sections">
+      <div class="panel">
+        <div class="panel-head"><h2>Scan</h2></div>
+        <div class="panel-body">
+          <div class="form-stack">
+            <div class="form-row">
+              <label class="field">
+                <span>Max posts</span>
+                <input name="scan_max_posts" value="{{ status.scanMaxPosts }}" />
+              </label>
+              <label class="field">
+                <span>Scroll steps</span>
+                <input name="scan_max_scrolls" value="{{ status.scanMaxScrolls }}" />
+              </label>
+            </div>
+            <label class="field">
+              <span>Recency</span>
+              <select name="scan_recency">
+                <option value="today" {% if status.scanRecency == 'today' %}selected{% endif %}>Today</option>
+                <option value="all" {% if status.scanRecency == 'all' %}selected{% endif %}>All</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Focus</span>
+              <input name="focus_keywords" value="{{ status.focusKeywords }}"
+                placeholder="sales, recruiting, higher ed, AI" />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {% if session_user.is_admin %}
+      <div class="panel">
+        <div class="panel-head"><h2>Schedule</h2></div>
+        <div class="panel-body">
+          <div class="form-stack">
+            <label class="field">
+              <span>Daily scan</span>
+              <select name="daily_scan_enabled">
+                <option value="true" {% if status.dailyScanEnabled %}selected{% endif %}>On</option>
+                <option value="false" {% if not status.dailyScanEnabled %}selected{% endif %}>Off</option>
+              </select>
+            </label>
+            <div class="form-row">
+              <label class="field">
+                <span>Hour UTC</span>
+                <input name="daily_scan_hour_utc" value="{{ status.dailyScanHourUtc }}" />
+              </label>
+              <label class="field">
+                <span>Minute UTC</span>
+                <input name="daily_scan_minute_utc" value="{{ status.dailyScanMinuteUtc }}" />
+              </label>
+            </div>
+            <p class="hint">
+              LinkedIn scroller token is set only via Azure deploy secrets
+              ({% if status.scrollerConfigured %}<span class="pill ok">present</span>{% else %}<span class="pill bad">missing</span>{% endif %}).
+            </p>
+            <p class="hint">
+              Durable storage:
+              {% if status.persistReady %}<span class="pill ok">Azure Files /persist</span>{% else %}<span class="pill bad">not mounted</span>{% endif %}
+              — {{ status.persistScans }} scans, {{ status.persistBriefs }} briefs
+              {% if status.persistMessage %}<span class="muted">({{ status.persistMessage }})</span>{% endif %}.
+              Scans survive redeploys when this is green.
+            </p>
+            {% if session_user.is_admin %}
+            <form method="post" action="/ui/recover-persist" style="margin-top:0.75rem">
+              <button type="submit" class="ghost">Recover from Azure Files backups</button>
+            </form>
+            {% if persist_candidates %}
+            <p class="hint" style="margin-top:0.5rem">Storage copies (richest first):</p>
+            <ul class="hint" style="margin:0.25rem 0 0; padding-left:1.2rem">
+              {% for c in persist_candidates %}
+              <li><code>{{ c.name }}</code> — {{ c.briefs }} briefs, {{ c.scans }} scans, {{ c.posts }} posts ({{ c.bytes }} bytes)</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="panel-body" style="padding-left:0;padding-right:0">
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </div>
+
+  {% if new_api_key %}
+  <div class="modal-backdrop open" id="api-key-modal" aria-hidden="false">
+    <div class="modal" role="dialog" aria-labelledby="api-key-title">
+      <h3 id="api-key-title">Copy your API key</h3>
+      <p>Name: <strong>{{ new_api_key_name }}</strong>. This is the only time the full key is shown.</p>
+      <div class="key-copy-row">
+        <code class="key-once" id="api-key-value">{{ new_api_key }}</code>
+        <button type="button" class="primary" id="copy-api-key">Copy</button>
+      </div>
+      <p class="hint" id="copy-status" style="min-height:1.2em"></p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="close-api-key-modal">Done</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var modal = document.getElementById("api-key-modal");
+      var val = document.getElementById("api-key-value");
+      var status = document.getElementById("copy-status");
+      document.getElementById("copy-api-key").addEventListener("click", function () {
+        var text = val.textContent || "";
+        function ok() { status.textContent = "Copied."; }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(ok).catch(function () {
+            status.textContent = "Select and copy manually.";
+          });
+        } else {
+          status.textContent = "Select and copy manually.";
+        }
+      });
+      document.getElementById("close-api-key-modal").addEventListener("click", function () {
+        modal.classList.remove("open");
+        window.location.replace("/settings");
+      });
+      modal.addEventListener("click", function (e) {
+        if (e.target === modal) {
+          modal.classList.remove("open");
+          window.location.replace("/settings");
+        }
+      });
+    })();
+  </script>
+  {% endif %}
+</body>
+</html>

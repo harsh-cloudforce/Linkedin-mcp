@@ -1,95 +1,63 @@
-# LinkedIn Feed Scroller (MCP)
+# LinkedIn / Market Pulse (nebulaONE)
 
-Playwright service that scrolls a user’s LinkedIn **home feed** and returns posts as JSON over **MCP** (Streamable HTTP). Built for cloud agents such as nebulaONE.
+Daily **feed intelligence** for sales, marketing, and recruiting — inspired by James’s Claude Cowork flow, productized like PVT Territory Manager.
 
-Repo: https://github.com/harsh-cloudforce/Linkedin-mcp
+## Architecture
 
-## Tools
+```
+User → Market Pulse webapp (dashboard + SQLite DB)
+         ├─ Daily scheduler → LinkedIn scroller MCP (Azure)
+         ├─ Stores raw posts + dated briefs (no overwrite)
+         └─ MCP / REST + INTEGRATION_API_KEY → nebulaONE Official Agent
 
-| Tool | Use |
+Later: more sources (RSS, other platforms) behind the same DB + API.
+```
+
+| Piece | Path |
 |---|---|
-| `start_linkedin_feed_scan` | Start background scroll |
-| `get_linkedin_feed_scan` | Poll until `completed` / `failed` / `awaiting_login` |
-| `run_linkedin_feed_scan` | Sync scan (may time out for agents) |
+| **Webapp + DB + daily jobs + MCP** | `webapp/` |
+| **LinkedIn feed scroller (ingest)** | `scroller/` + Azure Container App |
+| **Agent copy** | `nebulaone/AGENT.md` |
 
-### Remote LinkedIn login (cloud)
-
-If there is no LinkedIn session for a `userId`:
-
-1. Job status → `awaiting_login`
-2. Response includes `loginUrl` (remote Chromium via noVNC)
-3. User opens the link and signs in (+ 2FA)
-4. Scan continues automatically — **no browser opens on the user’s PC**
-
-Each `userId` has its own profile under `PROFILES_DIR`. Mount Azure Files at `/data/profiles` in production so sessions survive restarts.
-
-## Colleague quick start (local)
+## Quick start — webapp
 
 ```powershell
-git clone https://github.com/harsh-cloudforce/Linkedin-mcp.git
-cd Linkedin-mcp
-.\scripts\setup.ps1
-Copy-Item .\azure\.env.example .\azure\.env   # fill token/FQDN only if calling the deployed MCP
-Copy-Item .\scroller\.env.example .\scroller\.env
+cd "C:\Users\HarshShrishrimal\OneDrive - Cloudforce\Desktop\Linkedin Workflow"
+.\scripts\run-webapp.ps1
 ```
 
-### Headed CLI scan (first LinkedIn login on your machine)
+Open http://127.0.0.1:8790/ — register a user, run a scan, read briefs.
+
+nebulaONE: MCP URL `http://127.0.0.1:8790/mcp` (or your deployed host) with  
+`Authorization: Bearer <INTEGRATION_API_KEY>`.
+
+See `webapp/README.md`.
+
+## LinkedIn scroller (Azure)
+
+See `scroller/` and `scripts/deploy-containerapp.ps1`. Required for live LinkedIn home-feed scrapes from the webapp.
+
+## Deploy webapp (Azure)
 
 ```powershell
-cd .\scroller
-$env:PLAYWRIGHT_BROWSERS_PATH = Join-Path (Get-Location) ".playwright-browsers"
-.\.venv\Scripts\python.exe .\run_scan_cli.py --userId "you@example.com" --headed --maxPosts 60 --maxScrolls 20
+cd "C:\Users\HarshShrishrimal\OneDrive - Cloudforce\Desktop\Linkedin Workflow"
+.\scripts\deploy-webapp.ps1
 ```
 
-### Local MCP server
+Creates/updates short app name **`mpulse`** → `https://mpulse.<env>.azurecontainerapps.io/`.  
+No Render needed — this is one FastAPI app (HTML UI + API + MCP).
 
-```powershell
-.\scripts\run-scroller.ps1
-# Health: http://127.0.0.1:8000/healthz
-# MCP:    http://127.0.0.1:8000/mcp
-```
+**Durable data:** SQLite lives on the container’s local disk and is synced every ~20s to Azure Files at `/persist` (`mpulse-data` share). Users, scans, briefs, and settings survive image redeploys. Settings shows persist status (scans/briefs counts).
 
-## Deploy to Azure (shared Container App)
+For an even shorter vanity host (e.g. `pulse.gocloudforce.com`), add a **Custom domain** on the Container App in Azure Portal.
 
-The live app lives in resource group `rg-linkedin-market-pulse` (ACR `acrlinpulse12449`, app `linkedin-feed-scroller`).
+After deploy: sign in as admin → **Settings → Generate API key** → paste into nebulaONE (`/mcp` + Bearer header).
 
-### Option A — deploy from your laptop (same as Confluence)
+## nebulaONE Official Agent
 
-1. Ask the Azure subscription owner to grant you **Contributor** on `rg-linkedin-market-pulse` (and **AcrPush** on the ACR if needed).
-2. Install Azure CLI into the venv if needed:  
-   `.\scroller\.venv\Scripts\pip.exe install azure-cli`
-3. `.\scroller\.venv\Scripts\az.bat login`
-4. Copy `azure\.env.example` → `azure\.env` and fill `MCP_FQDN` / `PUBLIC_BASE_URL` (do **not** commit `.env`).
-5. Deploy:
+See `nebulaone/AGENT.md` for the system message and MCP connection steps.
 
-```powershell
-.\scripts\deploy-containerapp.ps1
-```
+- MCP URL: `https://mpulse.icyplant-a283531a.eastus2.azurecontainerapps.io/mcp`
+- Auth: `Authorization: Bearer <INTEGRATION_API_KEY>`
 
-This builds in ACR (no local Docker required) and updates the Container App. Bearer token is **not** rotated by the script.
-
-### Option B — deploy via GitHub Actions (recommended for teammates)
-
-After the repo owner configures Azure credentials once (see [`docs/AZURE-GITHUB-DEPLOY.md`](docs/AZURE-GITHUB-DEPLOY.md)):
-
-- Push (or merge) to `main`, **or**
-- Actions → **Deploy to Azure Container Apps** → **Run workflow**
-
-Teammates only need **write** access to this GitHub repo; they do not need Azure Portal access if Actions is set up.
-
-## nebulaONE wiring
-
-- MCP URL: `https://{fqdn}/mcp`
-- Secure header: `Authorization: Bearer <MCP_BEARER_TOKEN>`
-- Token is stored as Container App secret `mcp-bearer` and in each developer’s local `azure/.env` (gitignored).
-
-## Layout
-
-| Path | Purpose |
-|---|---|
-| `scroller/` | MCP server, Playwright feed scanner, Dockerfile |
-| `scripts/deploy-containerapp.ps1` | Local Azure deploy |
-| `scripts/setup.ps1` | Local Python/Playwright setup |
-| `.github/workflows/deploy.yml` | CI deploy to Azure |
-| `azure/` | Env examples + Cloud Shell notes |
-| `docs/AZURE-GITHUB-DEPLOY.md` | One-time Azure ↔ GitHub setup for shared deploys |
+LinkedIn login is saved server-side after the first successful sign-in (or by pasting `li_at` in Settings), so the agent should not need remote login on every scan.

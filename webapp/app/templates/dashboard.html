@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Market Pulse</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <h1 class="brand"><i class="brand-mark" aria-hidden="true"></i> Market <span>Pulse</span></h1>
+      <nav>
+        <a class="active" href="/?user={{ active_user }}">Briefs</a>
+        <a href="/settings">Settings</a>
+        <a href="/logout">Log out</a>
+      </nav>
+    </div>
+  </div>
+
+  <div class="page page-wide">
+    {% if flash %}
+    <div class="flash {% if flash_error %}error{% endif %}">{{ flash }}</div>
+    {% endif %}
+
+    <div id="login-banner" class="flash info" style="display:none"></div>
+
+    <header class="dash-hero">
+      <div class="dash-hero-copy">
+        <p class="eyebrow">Cloudforce · feed intelligence</p>
+        <h2 class="dash-title">Your LinkedIn pulse</h2>
+        <p class="dash-lead">
+          Connect LinkedIn once with a simple sign-in link. We save the session on the server —
+          no cookies, no DevTools. Then Scan whenever you want.
+        </p>
+      </div>
+      <div class="session-card" id="session-card">
+        <span class="session-dot" id="session-dot" aria-hidden="true"></span>
+        <div class="session-text">
+          <strong id="session-label">Checking LinkedIn session…</strong>
+          <p class="hint" id="session-hint">One remote sign-in saves your session for later scans.</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="toolbar-wrap">
+      <form method="post" action="/ui/run-scan" class="toolbar" id="scan-form">
+        <input type="hidden" name="tz_name" id="tz_name" value="" />
+        <input type="hidden" name="utc_offset_minutes" id="utc_offset_minutes" value="" />
+        <div class="field">
+          <span>LinkedIn email (scan identity)</span>
+          <div class="picker" id="user-picker">
+            <div class="picker-row">
+              <input
+                id="user_id"
+                name="user_id"
+                type="email"
+                required
+                placeholder="personal@gmail.com"
+                autocomplete="off"
+                value="{{ active_user or '' }}"
+              />
+              <button type="button" class="picker-toggle" id="picker-toggle" aria-label="Choose recent LinkedIn email">▾</button>
+            </div>
+            <ul class="picker-menu" id="picker-menu" role="listbox">
+              {% if identity_rows %}
+                {% for row in identity_rows %}
+                <li>
+                  <button type="button" data-value="{{ row.user_id }}">
+                    {{ row.user_id }}
+                    {% if row.briefs or row.scans %}
+                      <span class="picker-meta">{{ row.briefs }} briefs · {{ row.scans }} scans</span>
+                    {% endif %}
+                  </button>
+                </li>
+                {% endfor %}
+              {% elif users %}
+                {% for u in users %}
+                <li><button type="button" data-value="{{ u.user_id }}">{{ u.user_id }}</button></li>
+                {% endfor %}
+              {% else %}
+                <li class="empty-opt">Type a LinkedIn email to scan</li>
+              {% endif %}
+            </ul>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="ghost" id="switch-user">View</button>
+          <button type="submit" form="connect-form" class="ghost" id="connect-btn">Connect LinkedIn</button>
+          <button type="submit" class="primary">Scan feed</button>
+        </div>
+      </form>
+      <form method="post" action="/ui/connect-linkedin" id="connect-form" class="sr-only">
+        <input type="hidden" name="user_id" id="connect_user_id" value="{{ active_user or '' }}" />
+      </form>
+    </div>
+    <p class="hint account-line">
+      Signed in as <strong>{{ session_user.email }}</strong>.
+      Use <strong>Connect LinkedIn</strong> the first time (or if the session expires). Everyone else on your team keeps their own session.
+    </p>
+
+    <div class="panel-grid panel-grid-wide">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Briefs</h2>
+          <span class="meta" id="briefs-count">{{ briefs|length }}</span>
+        </div>
+        <div id="briefs-body">
+          {% if briefs %}
+          <table>
+            <thead>
+              <tr><th>When</th><th>Brief</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for b in briefs %}
+              <tr>
+                <td class="num">{{ brief_rows[loop.index0].time_label }}</td>
+                <td><a href="/briefs/{{ b.id }}">Open</a></td>
+                <td class="row-actions">
+                  <a href="/briefs/{{ b.id }}/download">Download</a>
+                  <button type="button" class="linkish js-delete-brief" data-brief-id="{{ b.id }}" data-label="{{ brief_rows[loop.index0].time_label }}">Delete</button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <div class="empty-state">
+            <p class="empty">No briefs yet</p>
+            <p class="hint">Connect LinkedIn once, then run <strong>Scan feed</strong>.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Scans</h2>
+          <span class="meta" id="scans-count">{{ scans|length }}</span>
+        </div>
+        <div id="scans-body">
+          {% if scan_rows %}
+          <table>
+            <thead>
+              <tr><th>#</th><th>Status</th><th>Posts</th><th></th></tr>
+            </thead>
+            <tbody id="scans-rows">
+              {% for row in scan_rows %}
+              {% set s = row.scan %}
+              <tr data-scan-id="{{ s.id }}">
+                <td class="num" title="Database id {{ s.id }}">{{ row.n }}</td>
+                <td>
+                  {% if s.status == 'completed' %}
+                  <span class="pill ok">completed</span>
+                  {% elif s.status == 'failed' %}
+                  <span class="pill bad">failed</span>
+                  {% elif s.status == 'awaiting_login' %}
+                  <span class="pill wait">sign in once</span>
+                  {% else %}
+                  <span class="pill wait">{{ s.status }}</span>
+                  {% endif %}
+                </td>
+                <td class="num post-count">{{ s.post_count }}</td>
+                <td class="scan-extra">
+                  {% if s.login_url and s.status == 'awaiting_login' %}
+                  <a class="primary-link" href="{{ s.login_url }}" target="_blank" rel="noopener">Open sign-in</a>
+                  {% elif s.error %}
+                  <span class="hint" title="{{ s.error }}">{{ s.error[:40] }}{% if s.error|length > 40 %}…{% endif %}</span>
+                  {% else %}
+                  <span class="hint" title="Permanent database id">id {{ s.id }}</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <p class="hint" style="margin:0.55rem 0 0">
+            # is this email’s scan list (1 = latest). Database ids are permanent and can look high after older runs.
+          </p>
+          {% else %}
+          <div class="empty-state">
+            <p class="empty">No scans yet</p>
+            <p class="hint">First-time users: Connect LinkedIn → sign in once → Scan feed.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="delete-modal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-labelledby="delete-modal-title">
+      <h3 id="delete-modal-title">Delete this brief?</h3>
+      <p id="delete-modal-text">This cannot be undone.</p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="delete-cancel">Cancel</button>
+        <button type="button" class="danger" id="delete-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var picker = document.getElementById("user-picker");
+      var input = document.getElementById("user_id");
+      var connectUser = document.getElementById("connect_user_id");
+      var toggle = document.getElementById("picker-toggle");
+      var menu = document.getElementById("picker-menu");
+      var switchBtn = document.getElementById("switch-user");
+      var connectForm = document.getElementById("connect-form");
+      var modal = document.getElementById("delete-modal");
+      var modalText = document.getElementById("delete-modal-text");
+      var pendingDeleteId = null;
+      var pausePoll = false;
+
+      function syncConnectUser() {
+        if (connectUser && input) connectUser.value = (input.value || "").trim().toLowerCase();
+      }
+      if (input) {
+        input.addEventListener("input", syncConnectUser);
+        input.addEventListener("change", syncConnectUser);
+      }
+      if (connectForm) {
+        connectForm.addEventListener("submit", function () {
+          syncConnectUser();
+        });
+      }
+
+      function open() { picker.classList.add("open"); }
+      function close() { picker.classList.remove("open"); }
+
+      function openDeleteModal(id, label) {
+        pendingDeleteId = id;
+        pausePoll = true;
+        modalText.textContent = "Brief from " + (label || ("#" + id)) + " will be permanently removed.";
+        modal.classList.add("open");
+        modal.setAttribute("aria-hidden", "false");
+      }
+      function closeDeleteModal() {
+        pendingDeleteId = null;
+        pausePoll = false;
+        modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
+      }
+      function submitDelete(id) {
+        var form = document.createElement("form");
+        form.method = "POST";
+        form.action = "/ui/briefs/" + id + "/delete";
+        var conf = document.createElement("input");
+        conf.type = "hidden";
+        conf.name = "confirm";
+        conf.value = "DELETE";
+        form.appendChild(conf);
+        document.body.appendChild(form);
+        form.submit();
+      }
+
+      if (toggle) {
+        toggle.addEventListener("click", function (e) {
+          e.preventDefault();
+          picker.classList.toggle("open");
+        });
+      }
+      if (menu) {
+        menu.querySelectorAll("button[data-value]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            input.value = btn.getAttribute("data-value") || "";
+            syncConnectUser();
+            close();
+            window.location = "/?user=" + encodeURIComponent(input.value);
+          });
+        });
+      }
+      document.addEventListener("click", function (e) {
+        if (picker && !picker.contains(e.target)) close();
+      });
+      if (switchBtn) {
+        switchBtn.addEventListener("click", function () {
+          if (!input.value.trim()) return;
+          window.location = "/?user=" + encodeURIComponent(input.value.trim().toLowerCase());
+        });
+      }
+
+      document.getElementById("delete-cancel").addEventListener("click", closeDeleteModal);
+      document.getElementById("delete-confirm").addEventListener("click", function () {
+        if (!pendingDeleteId) return;
+        submitDelete(pendingDeleteId);
+      });
+      modal.addEventListener("click", function (e) {
+        if (e.target === modal) closeDeleteModal();
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && modal.classList.contains("open")) closeDeleteModal();
+      });
+
+      function esc(s) {
+        return String(s || "").replace(/[&<>"']/g, function (c) {
+          return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
+        });
+      }
+
+      function pill(status) {
+        if (status === "completed") return '<span class="pill ok">completed</span>';
+        if (status === "failed") return '<span class="pill bad">failed</span>';
+        if (status === "awaiting_login") return '<span class="pill wait">sign in once</span>';
+        return '<span class="pill wait">' + esc(status) + "</span>";
+      }
+
+      function updateSession(sess) {
+        var card = document.getElementById("session-card");
+        var dot = document.getElementById("session-dot");
+        var label = document.getElementById("session-label");
+        var hint = document.getElementById("session-hint");
+        if (!card || !label) return;
+        var ok = !!(sess && (sess.canSkipVnc || sess.hasStorageState));
+        card.classList.toggle("ok", ok);
+        card.classList.toggle("need", !ok);
+        if (dot) dot.classList.toggle("on", ok);
+        label.textContent = ok ? "LinkedIn connected" : "LinkedIn not connected yet";
+        hint.textContent = ok
+          ? "Session saved — Scan feed will not ask you to sign in."
+          : "Click Connect LinkedIn, open the sign-in link, finish login once.";
+      }
+
+      function render(data) {
+        var briefsBody = document.getElementById("briefs-body");
+        var scansBody = document.getElementById("scans-body");
+        var briefsCount = document.getElementById("briefs-count");
+        var scansCount = document.getElementById("scans-count");
+        var loginBanner = document.getElementById("login-banner");
+        if (!briefsBody || !scansBody) return;
+
+        updateSession(data.linkedinSession);
+
+        briefsCount.textContent = data.briefs.length;
+        scansCount.textContent = data.scans.length;
+
+        if (!data.briefs.length) {
+          briefsBody.innerHTML = '<div class="empty-state"><p class="empty">No briefs yet</p><p class="hint">Connect LinkedIn once, then run <strong>Scan feed</strong>.</p></div>';
+        } else {
+          var brows = data.briefs.map(function (b) {
+            return "<tr><td class=\"num\">" + esc(b.timeLabel) + "</td><td><a href=\"/briefs/" + b.id + "\">Open</a></td><td class=\"row-actions\"><a href=\"/briefs/" + b.id + "/download\">Download</a> <button type=\"button\" class=\"linkish js-delete-brief\" data-brief-id=\"" + b.id + "\" data-label=\"" + esc(b.timeLabel) + "\">Delete</button></td></tr>";
+          }).join("");
+          briefsBody.innerHTML = "<table><thead><tr><th>When</th><th>Brief</th><th></th></tr></thead><tbody>" + brows + "</tbody></table>";
+        }
+
+        var loginLinks = [];
+        if (!data.scans.length) {
+          scansBody.innerHTML = '<div class="empty-state"><p class="empty">No scans yet</p><p class="hint">First-time users: Connect LinkedIn → sign in once → Scan feed.</p></div>';
+        } else {
+          var srows = data.scans.map(function (s) {
+            var extra = "";
+            if (s.loginUrl) {
+              extra = '<a class="primary-link" href="' + esc(s.loginUrl) + '" target="_blank" rel="noopener">Open sign-in</a>';
+              loginLinks.push('<a href="' + esc(s.loginUrl) + '" target="_blank" rel="noopener">Open sign-in #' + s.id + "</a>");
+            } else if (s.message && (s.status === "running" || s.status === "awaiting_login")) {
+              extra = '<span class="hint">' + esc(String(s.message).slice(0, 56)) + (String(s.message).length > 56 ? "…" : "") + "</span>";
+            } else if (s.error) {
+              extra = '<span class="hint" title="' + esc(s.error) + '">' + esc(s.error.slice(0, 40)) + (s.error.length > 40 ? "…" : "") + "</span>";
+            } else {
+              extra = '<span class="hint" title="Permanent database id">id ' + s.id + "</span>";
+            }
+            var n = s.n || s.id;
+            return "<tr data-scan-id=\"" + s.id + "\"><td class=\"num\" title=\"Database id " + s.id + "\">" + n + "</td><td>" + pill(s.status) + "</td><td class=\"num post-count\">" + s.postCount + "</td><td class=\"scan-extra\">" + extra + "</td></tr>";
+          }).join("");
+          scansBody.innerHTML = "<table><thead><tr><th>#</th><th>Status</th><th>Posts</th><th></th></tr></thead><tbody>" + srows + "</tbody></table>"
+            + '<p class="hint" style="margin:0.55rem 0 0"># is this email’s scan list (1 = latest). Database ids are permanent and can look high after older runs.</p>';
+        }
+
+        if (loginLinks.length) {
+          loginBanner.style.display = "";
+          loginBanner.innerHTML = "<strong>Sign into LinkedIn once</strong> (session saves automatically): " + loginLinks.join(" · ");
+        } else {
+          loginBanner.style.display = "none";
+          loginBanner.innerHTML = "";
+        }
+      }
+
+      var timer = null;
+      function syncTz() {
+        try {
+          var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+          var off = String(new Date().getTimezoneOffset());
+          var tzEl = document.getElementById("tz_name");
+          var offEl = document.getElementById("utc_offset_minutes");
+          if (tzEl) tzEl.value = tz;
+          if (offEl) offEl.value = off;
+          document.cookie = "mp_tz=" + encodeURIComponent(tz) + ";path=/;max-age=31536000;samesite=lax";
+          document.cookie = "mp_utc_offset=" + encodeURIComponent(off) + ";path=/;max-age=31536000;samesite=lax";
+        } catch (e) {}
+      }
+      syncTz();
+      syncConnectUser();
+
+      function poll() {
+        if (pausePoll) {
+          timer = setTimeout(poll, 1500);
+          return;
+        }
+        var uid = (input && input.value || "").trim().toLowerCase();
+        if (!uid) return;
+        fetch("/api/ui/activity?userId=" + encodeURIComponent(uid))
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!pausePoll) render(data);
+            clearTimeout(timer);
+            timer = setTimeout(poll, data.live ? 2500 : 8000);
+          })
+          .catch(function () {
+            clearTimeout(timer);
+            timer = setTimeout(poll, 10000);
+          });
+      }
+      poll();
+
+      document.addEventListener("click", function (e) {
+        var btn = e.target.closest(".js-delete-brief");
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        var id = btn.getAttribute("data-brief-id");
+        var label = btn.getAttribute("data-label") || ("#" + id);
+        if (!id) return;
+        openDeleteModal(id, label);
+      });
+    })();
+  </script>
+</body>
+</html>

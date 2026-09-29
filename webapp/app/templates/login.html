@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · Market Pulse</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="login-body">
+  <div class="login-wrap">
+    <div class="login-card">
+      <h1 class="brand brand-lg"><i class="brand-mark" aria-hidden="true"></i> Market <span>Pulse</span></h1>
+      <p class="login-tagline">Daily LinkedIn feed intelligence for Cloudforce GTM.</p>
+      <p class="hint">Use your Market Pulse account (usually Cloudforce email). LinkedIn scan identity is set after login and can be a personal email.</p>
+      {% if flash %}
+      <div class="flash {% if flash_error %}error{% endif %}">{{ flash }}</div>
+      {% endif %}
+      <form method="post" action="/login" class="form-stack">
+        <label class="field">
+          <span>Email</span>
+          <input name="email" type="email" required autocomplete="username" placeholder="you@company.com" />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input name="password" type="password" required autocomplete="current-password" />
+        </label>
+        <button type="submit" class="primary" style="width:100%">Sign in</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

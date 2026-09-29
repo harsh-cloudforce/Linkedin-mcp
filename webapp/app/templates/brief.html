@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ brief.title }}</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <h1 class="brand"><i class="brand-mark" aria-hidden="true"></i> Market <span>Pulse</span></h1>
+      <nav>
+        <a href="/">Briefs</a>
+        <a href="/settings">Settings</a>
+        <a href="/logout">Log out</a>
+      </nav>
+    </div>
+  </div>
+
+  <div class="brief-page">
+    <div class="brief-toolbar">
+      <a class="back-link" href="/">&larr; Back to briefs</a>
+      <div class="brief-actions">
+        <a href="/briefs/{{ brief.id }}/download">Download</a>
+        <form method="post" action="/ui/briefs/{{ brief.id }}/rebuild" style="display:inline">
+          <button type="submit" class="linkish">Rebuild</button>
+        </form>
+        <button type="button" class="linkish js-delete-brief" data-brief-id="{{ brief.id }}" data-label="brief">Delete</button>
+      </div>
+    </div>
+
+    <p class="brief-meta">
+      <strong style="color:var(--ink)" id="brief-when" data-utc="{{ brief.created_at.isoformat() if brief.created_at else '' }}">
+        {{ brief.title.split(' — ')[-1] if ' — ' in brief.title else brief.brief_date }}
+      </strong>
+      <code>{{ brief.user.user_id }}</code>
+    </p>
+
+    <article class="markdown brief-article">{{ brief_html | safe }}</article>
+  </div>
+
+  <div class="modal-backdrop" id="delete-modal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-labelledby="delete-modal-title">
+      <h3 id="delete-modal-title">Delete this brief?</h3>
+      <p id="delete-modal-text">This cannot be undone.</p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" id="delete-cancel">Cancel</button>
+        <button type="button" class="danger" id="delete-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var when = document.getElementById("brief-when");
+      if (when && when.getAttribute("data-utc")) {
+        try {
+          var d = new Date(when.getAttribute("data-utc"));
+          if (!isNaN(d.getTime())) {
+            when.textContent = d.toLocaleString(undefined, {
+              year: "numeric", month: "2-digit", day: "2-digit",
+              hour: "2-digit", minute: "2-digit"
+            });
+          }
+        } catch (e) {}
+      }
+
+      var modal = document.getElementById("delete-modal");
+      var modalText = document.getElementById("delete-modal-text");
+      var pendingId = null;
+
+      function openModal(id, label) {
+        pendingId = id;
+        modalText.textContent = "Brief from " + (label || ("#" + id)) + " will be permanently removed.";
+        modal.classList.add("open");
+      }
+      function closeModal() {
+        pendingId = null;
+        modal.classList.remove("open");
+      }
+
+      document.addEventListener("click", function (e) {
+        var btn = e.target.closest(".js-delete-brief");
+        if (!btn) return;
+        e.preventDefault();
+        openModal(btn.getAttribute("data-brief-id"), btn.getAttribute("data-label"));
+      });
+      document.getElementById("delete-cancel").addEventListener("click", closeModal);
+      document.getElementById("delete-confirm").addEventListener("click", function () {
+        if (!pendingId) return;
+        var form = document.createElement("form");
+        form.method = "POST";
+        form.action = "/ui/briefs/" + pendingId + "/delete";
+        var conf = document.createElement("input");
+        conf.type = "hidden";
+        conf.name = "confirm";
+        conf.value = "DELETE";
+        form.appendChild(conf);
+        document.body.appendChild(form);
+        form.submit();
+      });
+      modal.addEventListener("click", function (e) {
+        if (e.target === modal) closeModal();
+      });
+    })();
+  </script>
+</body>
+</html>

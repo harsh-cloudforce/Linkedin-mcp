@@ -108,8 +108,18 @@ Az containerapp update `
     "DEFAULT_HEADED=false" `
     "REMOTE_LOGIN_ENABLED=true" `
     "PROFILES_DIR=/data/profiles" `
+    "WORK_PROFILES_DIR=/tmp/li-profiles" `
     "DEFAULT_LOGIN_WAIT_SECONDS=600" `
+    "DEFAULT_MAX_POSTS=100" `
+    "DEFAULT_MAX_SCROLLS=40" `
     "PUBLIC_BASE_URL=$publicBase"
+
+Write-Host "Ensuring persistent LinkedIn profiles on Azure Files..." -ForegroundColor Cyan
+& (Join-Path $PSScriptRoot "ensure-scroller-storage.ps1") `
+  -ResourceGroup $ResourceGroup `
+  -Location $Location `
+  -AppName $AppName `
+  -EnvironmentName $EnvironmentName
 
 $fqdn = & $az containerapp show -n $AppName -g $ResourceGroup --query properties.configuration.ingress.fqdn -o tsv
 if ($publicBase -like "*placeholder*") {
@@ -140,3 +150,4 @@ Write-Host "Deployed." -ForegroundColor Green
 Write-Host "Health:  https://$fqdn/healthz"
 Write-Host "MCP URL: https://$fqdn/mcp"
 Write-Host "Keep existing MCP_BEARER_TOKEN from azure\.env (not rotated by this script)."
+Write-Host "LinkedIn browser profiles persist on Azure Files at /data/profiles."
