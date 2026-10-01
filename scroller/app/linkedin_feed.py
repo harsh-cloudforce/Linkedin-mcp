@@ -198,12 +198,27 @@ def _extract_posts_via_js(page: Page, max_posts: int) -> list[FeedPost]:
             cardRoots.push(el);
           };
 
-          root.querySelectorAll('[data-urn*="activity"], [data-id*="urn:li:activity"], .feed-shared-update-v2, [data-view-name="feed-full-update"]').forEach(pushUnique);
+          // Comments reuse the same expandable-text / profile-link markup as posts,
+          // which previously let individual comments get collected as if they were
+          // their own top-level feed posts. Recognize and skip anything rooted in a
+          // comment thread before it's ever considered a card.
+          const isCommentEl = (el) => !!(el && el.closest && el.closest(
+            '.comments-comment-item, .comments-comment-entity, .comments-comments-list, ' +
+            '[data-view-name="comment"], [data-view-name="comments-comment-item"], ' +
+            '[data-view-name*="comments-comment"], [data-view-name*="comment-item"]'
+          ));
+
+          root.querySelectorAll('[data-urn*="activity"], [data-id*="urn:li:activity"], .feed-shared-update-v2, [data-view-name="feed-full-update"]').forEach((el) => {
+            if (!isCommentEl(el)) pushUnique(el);
+          });
           root.querySelectorAll('[data-testid="expandable-text-box"]').forEach((box) => {
+            if (isCommentEl(box)) return;
             let card = box;
             for (let i = 0; i < 18 && card.parentElement; i++) {
               card = card.parentElement;
-              if (card.getAttribute('data-urn') || card.querySelector('[data-view-name="feed-control-menu"]') || (card.className && String(card.className).includes('feed-shared-update'))) {
+              if (isCommentEl(card)) return;
+              const urn = card.getAttribute('data-urn') || '';
+              if (/urn:li:activity/i.test(urn) || card.querySelector('[data-view-name="feed-full-update"]') || card.querySelector('[data-view-name="feed-control-menu"]') || (card.className && String(card.className).includes('feed-shared-update'))) {
                 pushUnique(card);
                 return;
               }
@@ -237,6 +252,10 @@ def _extract_posts_via_js(page: Page, max_posts: int) -> list[FeedPost]:
               .replace(/['\\u2019]s profile$/i, '')
               .replace(/\\s+profile$/i, '')
               .replace(/['\\u2019]s$/i, '')
+              // Bare possessive for names already ending in "s" (e.g. "Thomas' profile")
+              // has no literal "s" after the quote, so the rules above leave a dangling
+              // apostrophe behind once "profile" is stripped — mop it up here.
+              .replace(/['\\u2019]$/, '')
               .replace(/\\s+/g, ' ')
               .replace(/^[\\s,|\\-]+|[\\s,|\\-]+$/g, '');
             if (!a || /^(unknown|linkedin member|member|follow|connect|view|more)$/i.test(a)) return null;
@@ -321,6 +340,13 @@ def _extract_posts_via_js(page: Page, max_posts: int) -> list[FeedPost]:
               if (!src || src.startsWith('data:')) continue;
               // Skip avatars, emoji, tiny logos — keep feed photos / video thumbs
               if (/emoji|ghost|presence|profile-displayphoto|sprite|company-logo_100_100|shrink_100_100/i.test(src)) continue;
+              // Skip LinkedIn's templated celebration/confetti badges (e.g. the "new
+              // position" animated GIF overlay) — these are the same shared asset
+              // reused across many different people's posts, not real post content.
+              // Real post/feed images are served from .../dms/image/... or
+              // .../dms/playlist/vid/...; these badges are served from bare
+              // media.licdn.com/media/<hash> with no /dms/ segment.
+              if (/^https?:\\/\\/media\\.licdn\\.com\\/media\\//i.test(src)) continue;
               const w = img.naturalWidth || img.width || 0;
               const h = img.naturalHeight || img.height || 0;
               // Allow lazy-loaded images with unknown size if URL looks like feed media

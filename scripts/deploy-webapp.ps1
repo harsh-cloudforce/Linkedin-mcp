@@ -40,7 +40,12 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
   }
 }
 
-function Az {
+function Invoke-AzCli {
+  # Named to avoid colliding with the external "az" command: PowerShell resolves
+  # unqualified command names against functions before external executables
+  # (case-insensitively), so a function literally named "Az" calling "& $az"
+  # (where $az = "az") would call itself recursively instead of the real CLI
+  # whenever "az" is resolvable on PATH — causing a call-depth overflow.
   & $az @args
   if ($LASTEXITCODE -ne 0) { throw "az command failed: az $($args -join ' ')" }
 }
@@ -175,7 +180,7 @@ if (-not $dailyScanEnabled) { $dailyScanEnabled = "false" }
 $dailyScanEnabled = if ($dailyScanEnabled.Trim().ToLowerInvariant() -in @("1", "true", "yes", "on")) { "true" } else { "false" }
 
 Write-Host "Checking Azure CLI login..." -ForegroundColor Cyan
-Az account show -o none
+Invoke-AzCli account show -o none
 
 if (-not $ImageTag) {
   $ImageTag = "deploy-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
@@ -194,7 +199,7 @@ if (-not $SkipBuild) {
   Copy-Item (Join-Path $webapp ".dockerignore") $BuildDir -ErrorAction SilentlyContinue
 
   Write-Host "Building + pushing image via ACR Tasks: $image" -ForegroundColor Cyan
-  Az acr build -r $AcrName -t "${AppName}:$ImageTag" -f (Join-Path $BuildDir "Dockerfile") $BuildDir
+  Invoke-AzCli acr build -r $AcrName -t "${AppName}:$ImageTag" -f (Join-Path $BuildDir "Dockerfile") $BuildDir
   Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
@@ -252,7 +257,7 @@ if (-not $appExists) {
   $acrPass = & $az acr credential show -n $AcrName --query passwords[0].value -o tsv
   if ($LASTEXITCODE -ne 0 -or -not $acrPass) { throw "Could not read ACR credentials for $AcrName" }
 
-  Az containerapp create `
+  Invoke-AzCli containerapp create `
     -n $AppName `
     -g $ResourceGroup `
     --environment $EnvironmentName `
@@ -285,8 +290,8 @@ if (-not $appExists) {
     -EnvironmentName $EnvironmentName
 
   Write-Host "Updating Container App $AppName ..." -ForegroundColor Cyan
-  Az containerapp secret set -n $AppName -g $ResourceGroup --secrets @secretArgs
-  Az containerapp update -n $AppName -g $ResourceGroup --image $image --set-env-vars @envArgs
+  Invoke-AzCli containerapp secret set -n $AppName -g $ResourceGroup --secrets @secretArgs
+  Invoke-AzCli containerapp update -n $AppName -g $ResourceGroup --image $image --set-env-vars @envArgs
 }
 
 # Multiple-revision mode can leave traffic on an old revision; pin 100% to newest
@@ -302,7 +307,7 @@ if ($latestRev) {
 
 $fqdn = & $az containerapp show -n $AppName -g $ResourceGroup --query properties.configuration.ingress.fqdn -o tsv
 $publicBase = "https://$fqdn"
-Az containerapp update -n $AppName -g $ResourceGroup --set-env-vars "PUBLIC_BASE_URL=$publicBase" "WEBAPP_URL=$publicBase"
+Invoke-AzCli containerapp update -n $AppName -g $ResourceGroup --set-env-vars "PUBLIC_BASE_URL=$publicBase" "WEBAPP_URL=$publicBase"
 
 if ($RemoveLegacyApp) {
   Write-Host "Removing legacy app market-pulse-webapp (if present)..." -ForegroundColor Cyan

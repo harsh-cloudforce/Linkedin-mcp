@@ -34,7 +34,12 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
   }
 }
 
-function Az {
+function Invoke-AzCli {
+  # Named to avoid colliding with the external "az" command: PowerShell resolves
+  # unqualified command names against functions before external executables
+  # (case-insensitively), so a function literally named "Az" calling "& $az"
+  # (where $az = "az") would call itself recursively instead of the real CLI
+  # whenever "az" is resolvable on PATH — causing a call-depth overflow.
   & $az @args
   if ($LASTEXITCODE -ne 0) { throw "az command failed: az $($args -join ' ')" }
 }
@@ -65,7 +70,7 @@ if ($fromEnv.AcrName) { $AcrName = $fromEnv.AcrName }
 if ($fromEnv.Location) { $Location = $fromEnv.Location }
 
 Write-Host "Checking Azure CLI login..." -ForegroundColor Cyan
-Az account show -o none
+Invoke-AzCli account show -o none
 
 if (-not $ImageTag) {
   $ImageTag = "deploy-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
@@ -86,7 +91,7 @@ if (-not $SkipBuild) {
   Copy-Item (Join-Path $scroller ".dockerignore") $BuildDir -ErrorAction SilentlyContinue
 
   Write-Host "Building + pushing image via ACR Tasks: $image" -ForegroundColor Cyan
-  Az acr build -r $AcrName -t "${AppName}:$ImageTag" -f (Join-Path $BuildDir "Dockerfile") $BuildDir
+  Invoke-AzCli acr build -r $AcrName -t "${AppName}:$ImageTag" -f (Join-Path $BuildDir "Dockerfile") $BuildDir
   Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
@@ -100,7 +105,7 @@ $publicBase = if ($fromEnv.PublicBase) {
 }
 
 Write-Host "Updating Container App $AppName ..." -ForegroundColor Cyan
-Az containerapp update `
+Invoke-AzCli containerapp update `
   -n $AppName `
   -g $ResourceGroup `
   --image $image `
@@ -124,7 +129,7 @@ Write-Host "Ensuring persistent LinkedIn profiles on Azure Files..." -Foreground
 $fqdn = & $az containerapp show -n $AppName -g $ResourceGroup --query properties.configuration.ingress.fqdn -o tsv
 if ($publicBase -like "*placeholder*") {
   $publicBase = "https://$fqdn"
-  Az containerapp update -n $AppName -g $ResourceGroup --set-env-vars "PUBLIC_BASE_URL=$publicBase"
+  Invoke-AzCli containerapp update -n $AppName -g $ResourceGroup --set-env-vars "PUBLIC_BASE_URL=$publicBase"
 }
 
 Write-Host ""
