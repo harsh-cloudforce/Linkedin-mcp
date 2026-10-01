@@ -28,7 +28,7 @@ cd "C:\Users\HarshShrishrimal\OneDrive - Cloudforce\Desktop\Linkedin Workflow"
 
 Open http://127.0.0.1:8790/ — register a user, run a scan, read briefs.
 
-nebulaONE: MCP URL `http://127.0.0.1:8790/mcp` (or your deployed host) with  
+nebulaONE: MCP URL `http://127.0.0.1:8790/mcp/` (or your deployed host) with  
 `Authorization: Bearer <INTEGRATION_API_KEY>`.
 
 See `webapp/README.md`.
@@ -57,7 +57,7 @@ After deploy: sign in as admin → **Settings → Generate API key** → paste i
 
 See `nebulaone/AGENT.md` for the system message and MCP connection steps.
 
-- MCP URL: `https://mpulse.icyplant-a283531a.eastus2.azurecontainerapps.io/mcp`
+- MCP URL: `https://mpulse.whitesand-f9361ec3.eastus2.azurecontainerapps.io/mcp/`
 - Auth: `Authorization: Bearer <INTEGRATION_API_KEY>`
 
 LinkedIn login is saved server-side after the first successful sign-in (or by pasting `li_at` in Settings), so the agent should not need remote login on every scan.

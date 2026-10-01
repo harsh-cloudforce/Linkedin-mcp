@@ -57,7 +57,6 @@ def get_db() -> Session:
 
 def init_db() -> None:
     from app import models  # noqa: F401
-    from app.services.api_keys import bootstrap_legacy_env_key
 
     log = logging.getLogger("market_pulse")
     last_err: Exception | None = None
@@ -75,11 +74,6 @@ def init_db() -> None:
         raise last_err
 
     _ensure_admin()
-    db = SessionLocal()
-    try:
-        bootstrap_legacy_env_key(db)
-    finally:
-        db.close()
 
 
 def _migrate_schema() -> None:

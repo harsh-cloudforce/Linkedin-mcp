@@ -11,7 +11,7 @@ cd "C:\Users\HarshShrishrimal\OneDrive - Cloudforce\Desktop\Linkedin Workflow"
 
 - Dashboard: http://127.0.0.1:8790/
 - Health: http://127.0.0.1:8790/healthz
-- MCP (nebulaONE): http://127.0.0.1:8790/mcp  
+- MCP (nebulaONE): http://127.0.0.1:8790/mcp/
   Header: `Authorization: Bearer <INTEGRATION_API_KEY>`
 - REST: `/api/integration/v1/*` (same key)
 
@@ -36,9 +36,9 @@ APScheduler runs `run_daily_for_all_active_users` at `DAILY_SCAN_HOUR_UTC` (defa
 
 ## nebulaONE wiring (Azure)
 
-1. Sign in at `https://mpulse.icyplant-a283531a.eastus2.azurecontainerapps.io/login` as admin
+1. Sign in at `https://mpulse.whitesand-f9361ec3.eastus2.azurecontainerapps.io/login` as admin
 2. **Settings → Generate API key** (shown once — copy it)
-3. Connections → MCP Server (HTTPS) → `https://mpulse.icyplant-a283531a.eastus2.azurecontainerapps.io/mcp`
+3. Connections → MCP Server (HTTPS) → `https://mpulse.whitesand-f9361ec3.eastus2.azurecontainerapps.io/mcp/`
 4. Header: `Authorization` = `Bearer <generated key>`
 
 Scroller bearer token is **server-only** (Azure secret) — not editable in the UI.

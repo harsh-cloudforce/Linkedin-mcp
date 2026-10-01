@@ -10,7 +10,7 @@ param(
   [string]$Location = "eastus2",
   [string]$AppName = "linkedin-feed-scroller",
   [string]$EnvironmentName = "cae-linkedin-market-pulse",
-  [string]$AcrName = "acrlinpulse12449",
+  [string]$AcrName = "acrlinpulse35619",
   [string]$ImageTag = "",
   [switch]$SkipBuild
 )

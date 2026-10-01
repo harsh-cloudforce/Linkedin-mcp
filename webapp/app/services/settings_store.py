@@ -46,9 +46,9 @@ def get_scan_options() -> dict[str, Any]:
     except ValueError:
         max_posts = 40
     try:
-        max_scrolls = int(os.getenv("SCAN_MAX_SCROLLS", "80"))
+        max_scrolls = int(os.getenv("SCAN_MAX_SCROLLS", "30"))
     except ValueError:
-        max_scrolls = 80
+        max_scrolls = 30
     recency = (os.getenv("SCAN_RECENCY", "all") or "all").strip().lower()
     if recency not in {"today", "all"}:
         recency = "all"
@@ -56,24 +56,24 @@ def get_scan_options() -> dict[str, Any]:
     keywords = [k.strip() for k in raw_kw.replace(";", ",").split(",") if k.strip()]
     return {
         "maxPosts": max(5, min(max_posts, 200)),
-        "maxScrolls": max(1, min(max_scrolls, 120)),
+        "maxScrolls": max(1, min(max_scrolls, 40)),
         "recency": recency,
         "focusKeywords": keywords,
     }
 
 
-def get_public_status() -> dict[str, Any]:
+def get_public_status(*, owner_email: str | None = None) -> dict[str, Any]:
     """Status safe for templates — never expose raw secrets."""
     apply_to_environ()
     scroll = os.getenv("SCROLLER_BEARER_TOKEN", "").strip()
     opts = get_scan_options()
     from app.db import SessionLocal
-    from app.services.api_keys import count_active_keys, has_any_configured_key
+    from app.services.api_keys import count_active_keys
 
     db = SessionLocal()
     try:
-        active_keys = count_active_keys(db)
-        keys_ok = has_any_configured_key(db)
+        active_keys = count_active_keys(db, owner_email=owner_email) if owner_email else 0
+        keys_ok = active_keys > 0
     finally:
         db.close()
     try:

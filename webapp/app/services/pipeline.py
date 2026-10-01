@@ -92,7 +92,7 @@ async def run_linkedin_pipeline(
     max_posts: int | None = None,
     max_scrolls: int | None = None,
     poll_seconds: int = 10,
-    max_wait_seconds: int = 900,
+    max_wait_seconds: int = 600,
     tz_name: str | None = None,
     utc_offset_minutes: int | None = None,
 ) -> dict:

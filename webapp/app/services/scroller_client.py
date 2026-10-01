@@ -11,7 +11,7 @@ import httpx
 from app.services.settings_store import apply_to_environ
 
 DEFAULT_SCROLLER_MCP_URL = (
-    "https://linkedin-feed-scroller.icyplant-a283531a.eastus2.azurecontainerapps.io/mcp"
+    "https://linkedin-feed-scroller.whitesand-f9361ec3.eastus2.azurecontainerapps.io/mcp"
 )
 
 
@@ -87,8 +87,8 @@ async def _mcp_call(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
 async def start_linkedin_scan(
     *,
     user_id: str,
-    max_posts: int = 100,
-    max_scrolls: int = 40,
+    max_posts: int = 40,
+    max_scrolls: int = 30,
     login_wait_seconds: int = 600,
     recent_only: str = "today",
 ) -> dict[str, Any]:

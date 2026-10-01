@@ -21,6 +21,7 @@ DB_REL = Path("sqlite") / "mpulse.sqlite"
 SETTINGS_NAME = "local_settings.json"
 SETTINGS_REL = Path("sqlite") / SETTINGS_NAME
 BACKUP_KEEP = 20
+BACKUP_INTERVAL_SEC = 900
 # Never delete snapshots that still hold briefs/scans.
 CONTENT_SNAP_KEEP = 30
 # After a successful restore, refuse content regressions for this long (deploy races).
@@ -165,9 +166,37 @@ def _write_content_snapshot(src: Path, stats: dict[str, int]) -> None:
         log.warning("Could not write content snapshot: %s", exc)
 
 
-def _rotate_backups(persist_db: Path) -> None:
-    """Keep dated copies of the current canonical file before overwrite."""
+def _same_file_contents(left: Path, right: Path) -> bool:
+    try:
+        if left.stat().st_size != right.stat().st_size:
+            return False
+        with left.open("rb") as left_file, right.open("rb") as right_file:
+            while True:
+                left_chunk = left_file.read(64 * 1024)
+                right_chunk = right_file.read(64 * 1024)
+                if left_chunk != right_chunk:
+                    return False
+                if not left_chunk:
+                    return True
+    except OSError:
+        return False
+
+
+def _rotate_backups(persist_db: Path, replacement: Path) -> None:
+    """Keep dated copies only when the canonical database is changing."""
     if not persist_db.is_file():
+        return
+    try:
+        latest_backup = max(
+            persist_db.parent.glob("mpulse.bak.*.sqlite"),
+            key=lambda path: path.name,
+            default=None,
+        )
+        if latest_backup and time.time() - latest_backup.stat().st_mtime < BACKUP_INTERVAL_SEC:
+            return
+    except OSError:
+        pass
+    if replacement.is_file() and _same_file_contents(persist_db, replacement):
         return
     try:
         remote_stats = _db_stats(persist_db)
@@ -183,10 +212,10 @@ def _rotate_backups(persist_db: Path) -> None:
     try:
         backups = sorted(
             persist_db.parent.glob("mpulse.bak.*.sqlite"),
-            key=lambda p: p.stat().st_mtime,
+            key=lambda p: p.name,
             reverse=True,
         )
-        for old in backups[BACKUP_KEEP:]:
+        for old in backups[BACKUP_KEEP : BACKUP_KEEP * 2]:
             # Never delete a bak that still has content if we are low on content snaps
             try:
                 if _content(_db_stats(old)) > 0:
@@ -217,7 +246,7 @@ def _copy_sqlite_to_persist(src: Path, dst: Path) -> None:
             src_conn.close()
         stats = _db_stats(tmp)
         _write_content_snapshot(tmp, stats)
-        _rotate_backups(dst)
+        _rotate_backups(dst, tmp)
         _azure_safe_write(tmp, dst)
     finally:
         try:
@@ -240,8 +269,8 @@ def _legacy_candidates() -> list[Path]:
         out.extend(PERSIST_DIR.glob(f"{DB_NAME}.*"))
         sqlite_dir = PERSIST_DIR / "sqlite"
         if sqlite_dir.is_dir():
-            out.extend(sqlite_dir.glob("mpulse*.sqlite"))
-            out.extend(sqlite_dir.glob("mpulse.bak.*.sqlite"))
+            # Keep startup recovery bounded while preserving all backup files on disk.
+            out.extend(sorted(sqlite_dir.glob("mpulse.bak.*.sqlite"), reverse=True)[:BACKUP_KEEP])
             out.extend(sqlite_dir.glob(f".mpulse.sqlite.*.tmp"))
             out.extend(sqlite_dir.glob("market_pulse*"))
             snap_dir = sqlite_dir / "snaps"

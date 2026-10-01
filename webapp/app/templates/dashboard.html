@@ -23,27 +23,12 @@
     <div class="flash {% if flash_error %}error{% endif %}">{{ flash }}</div>
     {% endif %}
 
-    <div id="login-banner" class="flash info" style="display:none"></div>
-
-    <header class="dash-hero">
-      <div class="dash-hero-copy">
-        <p class="eyebrow">Cloudforce · feed intelligence</p>
-        <h2 class="dash-title">Your LinkedIn pulse</h2>
-        <p class="dash-lead">
-          Connect LinkedIn once with a simple sign-in link. We save the session on the server —
-          no cookies, no DevTools. Then Scan whenever you want.
-        </p>
-      </div>
-      <div class="session-card" id="session-card">
-        <span class="session-dot" id="session-dot" aria-hidden="true"></span>
-        <div class="session-text">
-          <strong id="session-label">Checking LinkedIn session…</strong>
-          <p class="hint" id="session-hint">One remote sign-in saves your session for later scans.</p>
-        </div>
-      </div>
+    <header class="dash-hero dash-hero-compact">
+      <p class="eyebrow">Cloudforce · feed intelligence</p>
+      <h2 class="dash-title">Your LinkedIn pulse</h2>
     </header>
 
-    <div class="toolbar-wrap">
+    <section class="control-card">
       <form method="post" action="/ui/run-scan" class="toolbar" id="scan-form">
         <input type="hidden" name="tz_name" id="tz_name" value="" />
         <input type="hidden" name="utc_offset_minutes" id="utc_offset_minutes" value="" />
@@ -85,7 +70,7 @@
           </div>
         </div>
         <div class="actions">
-          <button type="button" class="ghost" id="switch-user">View</button>
+          <button type="button" class="subtle" id="switch-user">View</button>
           <button type="submit" form="connect-form" class="ghost" id="connect-btn">Connect LinkedIn</button>
           <button type="submit" class="primary">Scan feed</button>
         </div>
@@ -93,11 +78,23 @@
       <form method="post" action="/ui/connect-linkedin" id="connect-form" class="sr-only">
         <input type="hidden" name="user_id" id="connect_user_id" value="{{ active_user or '' }}" />
       </form>
-    </div>
-    <p class="hint account-line">
-      Signed in as <strong>{{ session_user.email }}</strong>.
-      Use <strong>Connect LinkedIn</strong> the first time (or if the session expires). Everyone else on your team keeps their own session.
-    </p>
+
+      <div class="control-meta">
+        <div class="session-card" id="session-card">
+          <span class="session-dot" id="session-dot" aria-hidden="true"></span>
+          <div class="session-text">
+            <strong id="session-label">Checking LinkedIn session…</strong>
+            <p class="hint" id="session-hint">One remote sign-in saves your session for later scans.</p>
+          </div>
+        </div>
+        <p class="hint account-line">
+          Signed in as <strong>{{ session_user.email }}</strong>.
+          Use <strong>Connect LinkedIn</strong> the first time (or if the session expires).
+        </p>
+      </div>
+    </section>
+
+    <div id="login-banner" class="flash info" style="display:none"></div>
 
     <div class="panel-grid panel-grid-wide">
       <div class="panel">
@@ -142,13 +139,13 @@
           {% if scan_rows %}
           <table>
             <thead>
-              <tr><th>#</th><th>Status</th><th>Posts</th><th></th></tr>
+              <tr><th>Run</th><th>Status</th><th>Posts</th><th>Details</th></tr>
             </thead>
             <tbody id="scans-rows">
               {% for row in scan_rows %}
               {% set s = row.scan %}
               <tr data-scan-id="{{ s.id }}">
-                <td class="num" title="Database id {{ s.id }}">{{ row.n }}</td>
+                <td class="num">{{ row.n }}</td>
                 <td>
                   {% if s.status == 'completed' %}
                   <span class="pill ok">completed</span>
@@ -164,19 +161,18 @@
                 <td class="scan-extra">
                   {% if s.login_url and s.status == 'awaiting_login' %}
                   <a class="primary-link" href="{{ s.login_url }}" target="_blank" rel="noopener">Open sign-in</a>
+                  {% elif s.message and s.status in ['running', 'awaiting_login'] %}
+                  <span class="hint">{{ s.message[:64] }}{% if s.message|length > 64 %}…{% endif %}</span>
                   {% elif s.error %}
                   <span class="hint" title="{{ s.error }}">{{ s.error[:40] }}{% if s.error|length > 40 %}…{% endif %}</span>
                   {% else %}
-                  <span class="hint" title="Permanent database id">id {{ s.id }}</span>
+                  <span class="hint">{{ row.time_label }}</span>
                   {% endif %}
                 </td>
               </tr>
               {% endfor %}
             </tbody>
           </table>
-          <p class="hint" style="margin:0.55rem 0 0">
-            # is this email’s scan list (1 = latest). Database ids are permanent and can look high after older runs.
-          </p>
           {% else %}
           <div class="empty-state">
             <p class="empty">No scans yet</p>
@@ -358,13 +354,12 @@
             } else if (s.error) {
               extra = '<span class="hint" title="' + esc(s.error) + '">' + esc(s.error.slice(0, 40)) + (s.error.length > 40 ? "…" : "") + "</span>";
             } else {
-              extra = '<span class="hint" title="Permanent database id">id ' + s.id + "</span>";
+              extra = '<span class="hint">' + esc(s.timeLabel || "") + "</span>";
             }
-            var n = s.n || s.id;
-            return "<tr data-scan-id=\"" + s.id + "\"><td class=\"num\" title=\"Database id " + s.id + "\">" + n + "</td><td>" + pill(s.status) + "</td><td class=\"num post-count\">" + s.postCount + "</td><td class=\"scan-extra\">" + extra + "</td></tr>";
+            var n = s.n || "–";
+            return "<tr data-scan-id=\"" + s.id + "\"><td class=\"num\">" + n + "</td><td>" + pill(s.status) + "</td><td class=\"num post-count\">" + s.postCount + "</td><td class=\"scan-extra\">" + extra + "</td></tr>";
           }).join("");
-          scansBody.innerHTML = "<table><thead><tr><th>#</th><th>Status</th><th>Posts</th><th></th></tr></thead><tbody>" + srows + "</tbody></table>"
-            + '<p class="hint" style="margin:0.55rem 0 0"># is this email’s scan list (1 = latest). Database ids are permanent and can look high after older runs.</p>';
+          scansBody.innerHTML = "<table><thead><tr><th>Run</th><th>Status</th><th>Posts</th><th>Details</th></tr></thead><tbody>" + srows + "</tbody></table>";
         }
 
         if (loginLinks.length) {

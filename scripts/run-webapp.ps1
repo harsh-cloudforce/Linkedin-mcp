@@ -39,5 +39,5 @@ Get-Content ".env" | ForEach-Object {
 }
 
 Write-Host "Market Pulse → http://${hostName}:${port}/"
-Write-Host "MCP        → http://${hostName}:${port}/mcp"
+Write-Host "MCP        → http://${hostName}:${port}/mcp/"
 & $py -m uvicorn app.main:app --host $hostName --port $port --app-dir $webapp

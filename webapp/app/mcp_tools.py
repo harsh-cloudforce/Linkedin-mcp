@@ -44,8 +44,8 @@ async def register_user(userId: str, displayName: str | None = None) -> dict[str
 @mcp.tool()
 async def start_market_pulse_scan(
     userId: str,
-    maxPosts: int = 60,
-    maxScrolls: int = 20,
+    maxPosts: int = 40,
+    maxScrolls: int = 30,
 ) -> dict[str, Any]:
     """Scrape LinkedIn home feed for userId, store posts in DB, generate a dated brief."""
     init_db()

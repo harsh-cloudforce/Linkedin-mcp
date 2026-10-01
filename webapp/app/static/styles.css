@@ -290,7 +290,7 @@ button.ghost:hover, .btn.ghost:hover { background: var(--bg0); }
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.9rem 1.25rem;
+  padding: 1rem 1.35rem;
   border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, #fcfdfd, #f6f9f8);
 }
@@ -364,14 +364,14 @@ th {
   font-size: 11px;
   font-weight: 700;
   color: var(--muted);
-  padding: 0.55rem 1.1rem;
+  padding: 0.6rem 1.25rem;
   border-bottom: 1px solid var(--line);
   background: #fafcfb;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 td {
-  padding: 0.78rem 1.1rem;
+  padding: 0.85rem 1.25rem;
   border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
@@ -393,6 +393,8 @@ code {
   color: var(--muted);
   font-size: 13px;
 }
+
+.hint { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin: 0.35rem 0 0; }
 
 .pill {
   display: inline-block;
@@ -438,6 +440,175 @@ button.linkish, .btn.linkish {
   font-size: 12px;
 }
 button.linkish:hover, .btn.linkish:hover { color: var(--danger); }
+
+button.subtle, .btn.subtle {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  font-weight: 600;
+}
+button.subtle:hover, .btn.subtle:hover { background: var(--bg0); color: var(--ink); }
+
+button.primary.small {
+  height: 32px;
+  padding: 0 0.7rem;
+  font-size: 12px;
+  min-width: 0;
+}
+
+/* Row action kebab menu (details/summary, no JS required for open/close) */
+.row-menu { position: relative; display: inline-block; }
+.row-menu > summary { list-style: none; cursor: pointer; }
+.row-menu > summary::-webkit-details-marker,
+.menu-subpanel > summary::-webkit-details-marker { display: none; }
+.row-menu-toggle {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+.row-menu-toggle:hover { background: var(--accent-soft); color: var(--accent); border-color: #a7d4cc; }
+.row-menu[open] .row-menu-toggle { background: var(--accent-soft); color: var(--accent); border-color: #a7d4cc; }
+.row-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 190px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 0.35rem;
+  z-index: 60;
+}
+.menu-form { margin: 0; }
+.menu-item {
+  width: 100%;
+  height: auto;
+  min-height: 34px;
+  justify-content: flex-start;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  font-weight: 500;
+  font-size: 13px;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  text-align: left;
+}
+.menu-item:hover { background: var(--accent-soft); color: var(--accent); }
+.menu-item.danger-item:hover { background: #fef3f2; color: var(--danger); }
+.menu-sep { border: 0; border-top: 1px solid var(--line); margin: 0.3rem 0.2rem; }
+.menu-subpanel { margin: 0; }
+.menu-subpanel > summary.menu-item { margin: 0; }
+.menu-password-form {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.4rem 0.3rem 0.2rem;
+  margin: 0;
+}
+.menu-password-form input { height: 32px; font-size: 12px; flex: 1; min-width: 0; }
+
+/* Settings tab layout */
+.settings-hero { margin: 0 0 1rem; animation: rise 0.45s ease both; }
+.settings-layout {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 860px) {
+  .settings-layout { grid-template-columns: 180px 1fr; align-items: start; }
+}
+.settings-nav {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+@media (min-width: 860px) {
+  .settings-nav {
+    flex-direction: column;
+    gap: 0.15rem;
+    position: sticky;
+    top: 72px;
+  }
+}
+.settings-tab {
+  height: auto;
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  text-align: left;
+  justify-content: flex-start;
+}
+.settings-tab:hover { background: var(--bg0); color: var(--ink); }
+.settings-tab.active {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+@media (min-width: 860px) {
+  .settings-tab.active { background: var(--accent-soft); color: var(--accent); border-color: transparent; box-shadow: none; }
+}
+.settings-panels { min-width: 0; }
+.settings-panel .panel { margin-bottom: 1rem; }
+.settings-panel .panel:last-child { margin-bottom: 0; }
+
+/* Dashboard control card (toolbar + session status + account line, merged) */
+.control-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.1rem 1.1rem 1rem;
+  margin-bottom: 1.15rem;
+  animation: rise 0.5s 0.05s ease both;
+}
+.control-card .toolbar {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 0.9rem;
+  animation: none;
+}
+.control-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+.control-meta .session-card {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  min-width: 0;
+  max-width: none;
+  flex: 0 0 auto;
+  animation: none;
+}
+.control-meta .account-line {
+  margin: 0;
+  flex: 1 1 260px;
+  min-width: 200px;
+}
+.dash-hero-compact { margin-bottom: 0.9rem; }
 .row-actions {
   display: flex;
   gap: 0.65rem;
@@ -702,7 +873,7 @@ button.linkish:hover, .btn.linkish:hover { color: var(--danger); }
 
 .panel-grid {
   display: grid;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 .panel-grid-wide {
   grid-template-columns: 1fr;
@@ -723,7 +894,6 @@ button.linkish:hover, .btn.linkish:hover { color: var(--danger); }
 
 .dash-hero-copy { flex: 1 1 280px; min-width: 0; }
 .session-text { flex: 1 1 auto; min-width: 0; }
-.toolbar-wrap { margin-bottom: 0.35rem; }
 .primary-link {
   display: inline-flex;
   align-items: center;

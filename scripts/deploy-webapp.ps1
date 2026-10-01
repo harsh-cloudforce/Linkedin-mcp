@@ -13,7 +13,7 @@ param(
   [string]$Location = "eastus2",
   [string]$AppName = "mpulse",
   [string]$EnvironmentName = "cae-linkedin-market-pulse",
-  [string]$AcrName = "acrlinpulse12449",
+  [string]$AcrName = "acrlinpulse35619",
   [string]$ImageTag = "",
   [string]$AdminEmail = "",
   [string]$AdminPassword = "",
@@ -112,7 +112,7 @@ if (-not $scrollerMcp) {
   if ($fromAzure.ScrollerFqdn) {
     $scrollerMcp = "https://$($fromAzure.ScrollerFqdn)/mcp"
   } else {
-    $scrollerMcp = "https://linkedin-feed-scroller.icyplant-a283531a.eastus2.azurecontainerapps.io/mcp"
+    $scrollerMcp = "https://linkedin-feed-scroller.whitesand-f9361ec3.eastus2.azurecontainerapps.io/mcp"
   }
 }
 
@@ -169,6 +169,10 @@ $dailyHour = Get-DotEnvValue $webappEnv "DAILY_SCAN_HOUR_UTC"
 if (-not $dailyHour) { $dailyHour = "13" }
 $dailyMinute = Get-DotEnvValue $webappEnv "DAILY_SCAN_MINUTE_UTC"
 if (-not $dailyMinute) { $dailyMinute = "0" }
+$dailyScanEnabled = Get-DotEnvValue $azureEnv "DAILY_SCAN_ENABLED"
+if (-not $dailyScanEnabled) { $dailyScanEnabled = Get-DotEnvValue $webappEnv "DAILY_SCAN_ENABLED" }
+if (-not $dailyScanEnabled) { $dailyScanEnabled = "false" }
+$dailyScanEnabled = if ($dailyScanEnabled.Trim().ToLowerInvariant() -in @("1", "true", "yes", "on")) { "true" } else { "false" }
 
 Write-Host "Checking Azure CLI login..." -ForegroundColor Cyan
 Az account show -o none
@@ -215,7 +219,7 @@ $envArgs = @(
   "WEBAPP_PORT=8790",
   "DATA_DIR=/tmp/mpulse-data",
   "PERSIST_DIR=/persist",
-  "DAILY_SCAN_ENABLED=true",
+  "DAILY_SCAN_ENABLED=$dailyScanEnabled",
   "DAILY_SCAN_HOUR_UTC=$dailyHour",
   "DAILY_SCAN_MINUTE_UTC=$dailyMinute",
   "SCROLLER_MCP_URL=$scrollerMcp",
@@ -310,7 +314,7 @@ if ($RemoveLegacyApp) {
 if (Test-Path $azureEnv) {
   Set-Or-AddEnvLine $azureEnv "WEBAPP_FQDN" $fqdn
   Set-Or-AddEnvLine $azureEnv "WEBAPP_URL" $publicBase
-  Set-Or-AddEnvLine $azureEnv "WEBAPP_MCP_URL" "$publicBase/mcp"
+  Set-Or-AddEnvLine $azureEnv "WEBAPP_MCP_URL" "$publicBase/mcp/"
   Set-Or-AddEnvLine $azureEnv "INTEGRATION_API_KEY" $integrationKey
   Set-Or-AddEnvLine $azureEnv "ADMIN_EMAIL" $AdminEmail
   Set-Or-AddEnvLine $azureEnv "SESSION_SECRET" $sessionSecret
@@ -336,7 +340,7 @@ Write-Host ""
 Write-Host "Deployed." -ForegroundColor Green
 Write-Host "Dashboard: $publicBase/"
 Write-Host "Login:     $publicBase/login"
-Write-Host "MCP URL:   $publicBase/mcp"
+Write-Host "MCP URL:   $publicBase/mcp/"
 Write-Host "Admin:     $AdminEmail"
 if ($adminPasswordGenerated) {
   Write-Host "Admin password (save now): $AdminPassword" -ForegroundColor Yellow

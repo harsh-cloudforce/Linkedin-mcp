@@ -23,7 +23,25 @@
     <div class="flash {% if flash_error %}error{% endif %}">{{ flash }}</div>
     {% endif %}
 
+    <header class="settings-hero">
+      <p class="eyebrow">Configuration</p>
+      <h2 class="dash-title">Settings</h2>
+    </header>
+
+    <div class="settings-layout">
+      <nav class="settings-nav" id="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button type="button" class="settings-tab" data-tab="account" role="tab" aria-selected="true">Account</button>
+        {% if session_user.is_admin %}
+        <button type="button" class="settings-tab" data-tab="team" role="tab" aria-selected="false">Team</button>
+        {% endif %}
+        <button type="button" class="settings-tab" data-tab="api" role="tab" aria-selected="false">API &amp; Integrations</button>
+        <button type="button" class="settings-tab" data-tab="scan" role="tab" aria-selected="false">Scan settings</button>
+      </nav>
+
+      <div class="settings-panels">
+
     {% if session_user.is_admin %}
+    <section class="settings-panel" data-panel="team" id="panel-team" role="tabpanel" hidden>
     <div class="panel">
       <div class="panel-head"><h2>Users</h2></div>
       <div class="panel-body">
@@ -66,32 +84,41 @@
                 <td>{% if u.is_admin %}<span class="pill ok">admin</span>{% else %}member{% endif %}</td>
                 <td>{% if u.active %}<span class="pill ok">yes</span>{% else %}<span class="pill bad">no</span>{% endif %}</td>
                 <td class="row-actions">
-                  {% if u.user_id != session_user.email %}
-                    {% if u.is_admin %}
-                    <form method="post" action="/ui/users/{{ u.id }}/role" style="display:inline">
-                      <input type="hidden" name="role" value="member" />
-                      <button type="submit" class="linkish">Make member</button>
-                    </form>
-                    {% else %}
-                    <form method="post" action="/ui/users/{{ u.id }}/role" style="display:inline">
-                      <input type="hidden" name="role" value="admin" />
-                      <button type="submit" class="linkish">Make admin</button>
-                    </form>
-                    {% endif %}
-                    {% if u.active %}
-                    <form method="post" action="/ui/users/{{ u.id }}/deactivate" style="display:inline">
-                      <button type="submit" class="linkish">Deactivate</button>
-                    </form>
-                    {% else %}
-                    <form method="post" action="/ui/users/{{ u.id }}/activate" style="display:inline">
-                      <button type="submit" class="linkish">Activate</button>
-                    </form>
-                    {% endif %}
-                  {% endif %}
-                  <form method="post" action="/ui/users/{{ u.id }}/set-password" class="inline-pw" style="display:inline-flex;gap:0.35rem;align-items:center">
-                    <input name="password" type="password" required minlength="8" placeholder="New password" style="width:8.5rem;height:1.8rem;font-size:12px" />
-                    <button type="submit" class="linkish">Set password</button>
-                  </form>
+                  <details class="row-menu">
+                    <summary class="row-menu-toggle" aria-label="Actions for {{ u.user_id }}">&#8942;</summary>
+                    <div class="row-menu-panel">
+                      {% if u.user_id != session_user.email %}
+                        {% if u.is_admin %}
+                        <form method="post" action="/ui/users/{{ u.id }}/role" class="menu-form">
+                          <input type="hidden" name="role" value="member" />
+                          <button type="submit" class="menu-item">Make member</button>
+                        </form>
+                        {% else %}
+                        <form method="post" action="/ui/users/{{ u.id }}/role" class="menu-form">
+                          <input type="hidden" name="role" value="admin" />
+                          <button type="submit" class="menu-item">Make admin</button>
+                        </form>
+                        {% endif %}
+                        {% if u.active %}
+                        <form method="post" action="/ui/users/{{ u.id }}/deactivate" class="menu-form">
+                          <button type="submit" class="menu-item danger-item">Deactivate</button>
+                        </form>
+                        {% else %}
+                        <form method="post" action="/ui/users/{{ u.id }}/activate" class="menu-form">
+                          <button type="submit" class="menu-item">Activate</button>
+                        </form>
+                        {% endif %}
+                        <hr class="menu-sep" />
+                      {% endif %}
+                      <details class="menu-subpanel">
+                        <summary class="menu-item">Set password…</summary>
+                        <form method="post" action="/ui/users/{{ u.id }}/set-password" class="menu-password-form">
+                          <input name="password" type="password" required minlength="8" placeholder="New password" />
+                          <button type="submit" class="primary small">Save</button>
+                        </form>
+                      </details>
+                    </div>
+                  </details>
                 </td>
               </tr>
               {% endfor %}
@@ -103,13 +130,15 @@
         {% endif %}
       </div>
     </div>
+    </section>
+    {% endif %}
 
+    <section class="settings-panel" data-panel="api" id="panel-api" role="tabpanel" hidden>
     <div class="panel">
-      <div class="panel-head"><h2>Integration API keys</h2></div>
+      <div class="panel-head"><h2>My Integration API keys</h2></div>
       <div class="panel-body">
         <p class="hint">
-          Admin-only. Named keys for nebulaONE / curl. <strong>All active keys work</strong> until you revoke them
-          (like GitHub tokens). The full secret is shown once in a popup — after that only the name and prefix remain.
+          Keys created by your account for nebulaONE / curl. The full secret is shown once when created; only its name and prefix remain afterward.
           Status:
           {% if status.integrationKeySet %}<span class="pill ok">{{ status.activeApiKeyCount }} active</span>{% else %}<span class="pill bad">none</span>{% endif %}
         </p>
@@ -120,6 +149,16 @@
           </label>
           <button type="submit" class="primary">Create key</button>
         </form>
+        {% if api_keys %}
+        <form method="post" action="/ui/api-keys/delete-mine" style="margin-bottom:1rem" onsubmit="return confirm('Permanently delete all API keys created by your account? Connections using them will stop working.');">
+          <button type="submit" class="danger">Delete all my keys</button>
+        </form>
+        {% endif %}
+        {% if session_user.is_admin and global_api_key_count %}
+        <form method="post" action="/ui/api-keys/delete-all" style="margin-bottom:1rem" onsubmit="return confirm('Permanently delete every API key for every user? All integrations using these keys will stop working. This cannot be undone.');">
+          <button type="submit" class="danger">Delete all keys for all users</button>
+        </form>
+        {% endif %}
 
         {% if api_keys %}
         <div class="table-wrap">
@@ -133,11 +172,22 @@
                 <td class="num">{{ k.created_at.strftime('%Y-%m-%d %H:%M') if k.created_at else '—' }} UTC</td>
                 <td>{% if k.active %}<span class="pill ok">active</span>{% else %}<span class="pill bad">revoked</span>{% endif %}</td>
                 <td class="row-actions">
-                  {% if k.active %}
-                  <form method="post" action="/ui/api-keys/{{ k.id }}/revoke" style="display:inline" onsubmit="return confirm('Revoke this key? Apps using it will stop working.');">
-                    <button type="submit" class="linkish">Revoke</button>
-                  </form>
-                  {% endif %}
+                  <details class="row-menu">
+                    <summary class="row-menu-toggle" aria-label="Actions for {{ k.name }}">&#8942;</summary>
+                    <div class="row-menu-panel">
+                      {% if k.active %}
+                      <form method="post" action="/ui/api-keys/{{ k.id }}/revoke" class="menu-form" onsubmit="return confirm('Revoke this API key? It will stop working, but stays listed for history.');">
+                        <button type="submit" class="menu-item">Revoke</button>
+                      </form>
+                      {% endif %}
+                      <form method="post" action="/ui/api-keys/{{ k.id }}/regenerate" class="menu-form" onsubmit="return confirm('Regenerate this key? The old secret stops working immediately and a new one is shown once.');">
+                        <button type="submit" class="menu-item">Regenerate</button>
+                      </form>
+                      <form method="post" action="/ui/api-keys/{{ k.id }}/delete" class="menu-form" onsubmit="return confirm('Permanently delete this API key? Apps using it will stop working.');">
+                        <button type="submit" class="menu-item danger-item">Delete</button>
+                      </form>
+                    </div>
+                  </details>
                 </td>
               </tr>
               {% endfor %}
@@ -145,7 +195,7 @@
           </table>
         </div>
         {% else %}
-        <p class="empty">No API keys yet — create one for nebulaONE</p>
+        <p class="empty">No API keys created by this account — create one for nebulaONE</p>
         {% endif %}
 
         <div class="api-ref">
@@ -159,13 +209,14 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
   "{{ base_url }}/api/integration/v1/briefs?userId=you@company.com"
 
 # nebulaONE MCP
-# URL: {{ base_url }}/mcp
+# URL: {{ base_url }}/mcp/
 # Header: Authorization: Bearer YOUR_API_KEY</pre>
         </div>
       </div>
     </div>
-    {% endif %}
+    </section>
 
+    <section class="settings-panel" data-panel="account" id="panel-account" role="tabpanel">
     <div class="panel" id="my-password">
       <div class="panel-head"><h2>My password</h2></div>
       <div class="panel-body">
@@ -226,7 +277,9 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
         </details>
       </div>
     </div>
+    </section>
 
+    <section class="settings-panel" data-panel="scan" id="panel-scan" role="tabpanel" hidden>
     <form method="post" action="/settings" class="settings-sections">
       <div class="panel">
         <div class="panel-head"><h2>Scan</h2></div>
@@ -313,6 +366,10 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
         <button type="submit" class="primary">Save</button>
       </div>
     </form>
+    </section>
+
+      </div>
+    </div>
   </div>
 
   {% if new_api_key %}
@@ -348,16 +405,114 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
       });
       document.getElementById("close-api-key-modal").addEventListener("click", function () {
         modal.classList.remove("open");
-        window.location.replace("/settings");
+        window.location.replace("/settings#api");
       });
       modal.addEventListener("click", function (e) {
         if (e.target === modal) {
           modal.classList.remove("open");
-          window.location.replace("/settings");
+          window.location.replace("/settings#api");
         }
       });
     })();
   </script>
   {% endif %}
+
+  <script>
+    (function () {
+      var TAB_KEY = "mp_settings_tab";
+      var tabs = Array.prototype.slice.call(document.querySelectorAll(".settings-tab"));
+      var panels = Array.prototype.slice.call(document.querySelectorAll(".settings-panel"));
+      var validIds = tabs.map(function (t) { return t.getAttribute("data-tab"); });
+
+      function select(id) {
+        if (validIds.indexOf(id) === -1) id = validIds[0];
+        tabs.forEach(function (t) {
+          var active = t.getAttribute("data-tab") === id;
+          t.classList.toggle("active", active);
+          t.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        panels.forEach(function (p) {
+          p.hidden = p.getAttribute("data-panel") !== id;
+        });
+        // Row-menu popovers get reparented to <body> while open (see below),
+        // so hiding their panel on tab switch would not hide them - close explicitly.
+        document.querySelectorAll("details.row-menu[open]").forEach(closeRowMenu);
+        try { localStorage.setItem(TAB_KEY, id); } catch (e) {}
+      }
+
+      tabs.forEach(function (t) {
+        t.addEventListener("click", function () {
+          var id = t.getAttribute("data-tab");
+          select(id);
+          history.replaceState(null, "", "#" + id);
+        });
+      });
+
+      panels.forEach(function (p) {
+        p.querySelectorAll("form").forEach(function (f) {
+          f.addEventListener("submit", function () {
+            try { localStorage.setItem(TAB_KEY, p.getAttribute("data-panel")); } catch (e) {}
+          });
+        });
+      });
+
+      var initial = (location.hash || "").replace("#", "");
+      if (!initial && document.getElementById("api-key-modal")) initial = "api";
+      if (!initial) { try { initial = localStorage.getItem(TAB_KEY) || ""; } catch (e) {} }
+      select(initial || "account");
+
+      // Row-menu popovers sit inside panels/tables with overflow:hidden|auto
+      // (needed elsewhere for rounded corners / horizontal scroll), which would
+      // clip the dropdown for rows near the bottom edge. Reparent the panel to
+      // <body> and position it with fixed coords while open, so it always
+      // floats above everything; move it back on close so the DOM/form
+      // structure is unchanged for submission.
+      function closeRowMenu(d) {
+        var panel = d.__menuPanel;
+        if (panel && panel.__homeParent) {
+          panel.style.position = "";
+          panel.style.top = "";
+          panel.style.left = "";
+          panel.style.right = "";
+          panel.__homeParent.insertBefore(panel, panel.__homeNext || null);
+          panel.__homeParent = null;
+        }
+        d.removeAttribute("open");
+      }
+
+      document.querySelectorAll("details.row-menu").forEach(function (d) {
+        // Cache the panel reference up front - once opened, the panel is
+        // reparented to <body>, so querying d's descendants later would miss it.
+        var panel = d.querySelector(".row-menu-panel");
+        d.__menuPanel = panel;
+        d.addEventListener("toggle", function () {
+          if (!d.open || !panel) return;
+          document.querySelectorAll("details.row-menu[open]").forEach(function (o) {
+            if (o !== d) closeRowMenu(o);
+          });
+          var summary = d.querySelector("summary");
+          var rect = summary.getBoundingClientRect();
+          if (!panel.__homeParent) {
+            panel.__homeParent = panel.parentNode;
+            panel.__homeNext = panel.nextSibling;
+          }
+          document.body.appendChild(panel);
+          panel.style.position = "fixed";
+          panel.style.top = (rect.bottom + 6) + "px";
+          panel.style.left = "auto";
+          panel.style.right = (window.innerWidth - rect.right) + "px";
+        });
+      });
+
+      document.addEventListener("click", function (e) {
+        document.querySelectorAll("details.row-menu[open]").forEach(function (d) {
+          var panel = d.__menuPanel;
+          var insideSummary = d.querySelector("summary").contains(e.target);
+          var insidePanel = panel && panel.contains(e.target);
+          if (!insideSummary && !insidePanel) closeRowMenu(d);
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

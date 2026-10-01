@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
-import os
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.models import ApiKey
-from app.security import expected_integration_key, generate_api_key
+from app.security import generate_api_key
 
 
 def hash_api_key(raw: str) -> str:
@@ -34,12 +32,52 @@ def create_api_key(db: Session, *, name: str, created_by: str | None) -> tuple[A
     return row, raw
 
 
-def list_api_keys(db: Session) -> list[ApiKey]:
-    return db.query(ApiKey).order_by(ApiKey.created_at.desc()).all()
+def list_api_keys(db: Session, *, owner_email: str) -> list[ApiKey]:
+    owner = owner_email.strip().lower()
+    if not owner:
+        return []
+    return (
+        db.query(ApiKey)
+        .filter(ApiKey.created_by == owner)
+        .order_by(ApiKey.created_at.desc())
+        .all()
+    )
 
 
-def revoke_api_key(db: Session, key_id: int) -> bool:
-    row = db.query(ApiKey).filter(ApiKey.id == key_id).one_or_none()
+def delete_api_key(db: Session, key_id: int, *, owner_email: str) -> bool:
+    row = (
+        db.query(ApiKey)
+        .filter(ApiKey.id == key_id, ApiKey.created_by == owner_email.strip().lower())
+        .one_or_none()
+    )
+    if not row:
+        return False
+    db.delete(row)
+    db.commit()
+    return True
+
+
+def delete_user_api_keys(db: Session, *, owner_email: str) -> int:
+    owner = owner_email.strip().lower()
+    if not owner:
+        return 0
+    count = db.query(ApiKey).filter(ApiKey.created_by == owner).delete(synchronize_session=False)
+    db.commit()
+    return count
+
+
+def delete_all_api_keys(db: Session) -> int:
+    count = db.query(ApiKey).delete(synchronize_session=False)
+    db.commit()
+    return count
+
+
+def revoke_api_key(db: Session, key_id: int, *, owner_email: str) -> bool:
+    row = (
+        db.query(ApiKey)
+        .filter(ApiKey.id == key_id, ApiKey.created_by == owner_email.strip().lower())
+        .one_or_none()
+    )
     if not row or not row.active:
         return False
     row.active = 0
@@ -48,21 +86,42 @@ def revoke_api_key(db: Session, key_id: int) -> bool:
     return True
 
 
-def count_active_keys(db: Session) -> int:
-    return db.query(ApiKey).filter(ApiKey.active == 1).count()
+def regenerate_api_key(db: Session, key_id: int, *, owner_email: str) -> tuple[ApiKey, str] | None:
+    """Issue a new secret for an existing key row, reactivating it if it was revoked."""
+    row = (
+        db.query(ApiKey)
+        .filter(ApiKey.id == key_id, ApiKey.created_by == owner_email.strip().lower())
+        .one_or_none()
+    )
+    if not row:
+        return None
+    raw = generate_api_key()
+    row.key_prefix = raw[:8]
+    row.key_hash = hash_api_key(raw)
+    row.active = 1
+    row.revoked_at = None
+    db.commit()
+    db.refresh(row)
+    return row, raw
+
+
+def count_active_keys(db: Session, *, owner_email: str | None = None) -> int:
+    query = db.query(ApiKey).filter(ApiKey.active == 1)
+    if owner_email is not None:
+        owner = owner_email.strip().lower()
+        if not owner:
+            return 0
+        query = query.filter(ApiKey.created_by == owner)
+    return query.count()
 
 
 def provided_key_is_valid(provided: str | None, db: Session | None = None) -> bool:
-    """Accept any active named key, or legacy INTEGRATION_API_KEY env (deploy bootstrap)."""
+    """Accept only an active named key; legacy keys are bootstrapped into this table."""
     if not provided:
         return False
     candidate = provided.strip()
     if not candidate:
         return False
-
-    legacy = expected_integration_key()
-    if legacy and hmac.compare_digest(candidate, legacy):
-        return True
 
     close = False
     if db is None:
@@ -84,8 +143,6 @@ def provided_key_is_valid(provided: str | None, db: Session | None = None) -> bo
 
 
 def has_any_configured_key(db: Session | None = None) -> bool:
-    if expected_integration_key():
-        return True
     close = False
     if db is None:
         from app.db import SessionLocal
@@ -99,23 +156,3 @@ def has_any_configured_key(db: Session | None = None) -> bool:
             db.close()
 
 
-def bootstrap_legacy_env_key(db: Session) -> None:
-    """If env INTEGRATION_API_KEY is set and no named keys exist, register it once."""
-    legacy = expected_integration_key()
-    if not legacy:
-        return
-    if count_active_keys(db) > 0:
-        return
-    digest = hash_api_key(legacy)
-    if db.query(ApiKey).filter(ApiKey.key_hash == digest).one_or_none():
-        return
-    db.add(
-        ApiKey(
-            name="Deploy default",
-            key_prefix=legacy[:8],
-            key_hash=digest,
-            created_by="system",
-            active=1,
-        )
-    )
-    db.commit()

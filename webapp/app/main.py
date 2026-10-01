@@ -22,9 +22,17 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.auth import require_api_key
 from app.db import get_db, init_db
 from app.mcp_tools import mcp
-from app.models import Brief, Scan, User
+from app.models import ApiKey, Brief, Scan, User
 from app.security import hash_password, public_base_url, secret_key
-from app.services.api_keys import create_api_key, list_api_keys, revoke_api_key
+from app.services.api_keys import (
+    create_api_key,
+    delete_all_api_keys,
+    delete_api_key,
+    delete_user_api_keys,
+    list_api_keys,
+    regenerate_api_key,
+    revoke_api_key,
+)
 from app.services.briefs import ensure_user, format_user_time, render_brief_html
 from app.services.pipeline import run_linkedin_pipeline
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -119,24 +127,26 @@ async def ui_login_gate(request: Request, call_next):
 
 @api.get("/healthz")
 @api.get("/api/integration/v1/health")
-def health():
+def health(request: Request):
     from app.services.persist import list_persist_candidates, persist_status
 
     persist = persist_status()
-    try:
-        cands = list_persist_candidates()[:5]
-        persist["candidates"] = [
-            {
-                "name": c["name"],
-                "briefs": c["briefs"],
-                "scans": c["scans"],
-                "posts": c["posts"],
-                "bytes": c["bytes"],
-            }
-            for c in cands
-        ]
-    except Exception:
-        persist["candidates"] = []
+    persist["candidates"] = []
+    if request.query_params.get("diagnostics", "").lower() in {"1", "true", "yes"}:
+        try:
+            cands = list_persist_candidates()[:5]
+            persist["candidates"] = [
+                {
+                    "name": c["name"],
+                    "briefs": c["briefs"],
+                    "scans": c["scans"],
+                    "posts": c["posts"],
+                    "bytes": c["bytes"],
+                }
+                for c in cands
+            ]
+        except Exception:
+            persist["candidates"] = []
     return {
         "status": "ok",
         "service": "market-pulse-webapp",
@@ -230,7 +240,16 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     # Newest-first list ordinal for this LinkedIn identity (1 = latest)
     scan_rows = []
     for i, s in enumerate(scans, start=1):
-        scan_rows.append({"scan": s, "n": i, "total": len(scans)})
+        scan_rows.append(
+            {
+                "scan": s,
+                "n": i,
+                "total": len(scans),
+                "time_label": format_user_time(s.created_at, tz_name=tz_name, utc_offset_minutes=offset)
+                if s.created_at
+                else "",
+            }
+        )
 
     brief_rows = [
         {
@@ -348,6 +367,9 @@ async def ui_activity(request: Request, userId: str = "", db: Session = Depends(
                 "total": len(scans),
                 "status": s.status,
                 "postCount": s.post_count,
+                "timeLabel": format_user_time(s.created_at, tz_name=tz_name, utc_offset_minutes=offset)
+                if s.created_at
+                else "",
                 "loginUrl": s.login_url if s.status == "awaiting_login" else None,
                 "message": s.message,
                 "error": (s.error or "")[:120] or None,
@@ -363,7 +385,6 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
     if not session_user:
         return RedirectResponse("/login", status_code=303)
     users = []
-    api_keys = []
     if session_user.is_admin:
         # Webapp login accounts only (not LinkedIn-only scan identities)
         users = (
@@ -372,7 +393,8 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
             .order_by(User.user_id.asc())
             .all()
         )
-        api_keys = list_api_keys(db)
+    api_keys = list_api_keys(db, owner_email=session_user.email)
+    global_api_key_count = db.query(ApiKey).count() if session_user.is_admin else 0
     base = public_base_url(str(request.base_url).rstrip("/"))
     new_api_key = request.session.pop("flash_api_key", None)
     new_api_key_name = request.session.pop("flash_api_key_name", None)
@@ -391,13 +413,14 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
         "settings.html",
         {
             "request": request,
-            "status": get_public_status(),
+            "status": get_public_status(owner_email=session_user.email),
             "flash": request.query_params.get("flash"),
             "flash_error": request.query_params.get("err") == "1",
             "new_api_key": new_api_key,
             "new_api_key_name": new_api_key_name,
             "users": users,
             "api_keys": api_keys,
+            "global_api_key_count": global_api_key_count,
             "session_user": template_session(session_user),
             "base_url": base,
             "persist_candidates": persist_candidates,
@@ -414,7 +437,7 @@ async def settings_save(
     daily_scan_hour_utc: str = Form("13"),
     daily_scan_minute_utc: str = Form("0"),
     scan_max_posts: str = Form("40"),
-    scan_max_scrolls: str = Form("80"),
+    scan_max_scrolls: str = Form("20"),
     scan_recency: str = Form("today"),
     focus_keywords: str = Form(""),
     db: Session = Depends(get_db),
@@ -481,22 +504,64 @@ def ui_create_api_key(
     db: Session = Depends(get_db),
 ):
     session_user = get_session_user(request, db)
-    if not session_user or not session_user.is_admin:
-        return RedirectResponse("/settings?flash=Admin+only&err=1", status_code=303)
+    if not session_user:
+        return RedirectResponse("/login", status_code=303)
     row, raw = create_api_key(db, name=name, created_by=session_user.email)
     request.session["flash_api_key"] = raw
     request.session["flash_api_key_name"] = row.name
     return RedirectResponse("/settings?flash=API+key+created", status_code=303)
 
 
-@api.post("/ui/api-keys/{key_id}/revoke")
-def ui_revoke_api_key(key_id: int, request: Request, db: Session = Depends(get_db)):
+@api.post("/ui/api-keys/{key_id}/delete")
+def ui_delete_api_key(key_id: int, request: Request, db: Session = Depends(get_db)):
+    session_user = get_session_user(request, db)
+    if not session_user:
+        return RedirectResponse("/login", status_code=303)
+    if delete_api_key(db, key_id, owner_email=session_user.email):
+        return RedirectResponse("/settings?flash=API+key+deleted", status_code=303)
+    return RedirectResponse("/settings?flash=Key+not+found+for+this+account&err=1", status_code=303)
+
+
+@api.post("/ui/api-keys/delete-mine")
+def ui_delete_my_api_keys(request: Request, db: Session = Depends(get_db)):
+    session_user = get_session_user(request, db)
+    if not session_user:
+        return RedirectResponse("/login", status_code=303)
+    count = delete_user_api_keys(db, owner_email=session_user.email)
+    return RedirectResponse(f"/settings?flash=Deleted+{count}+of+your+API+keys", status_code=303)
+
+
+@api.post("/ui/api-keys/delete-all")
+def ui_admin_delete_all_api_keys(request: Request, db: Session = Depends(get_db)):
     session_user = get_session_user(request, db)
     if not session_user or not session_user.is_admin:
         return RedirectResponse("/settings?flash=Admin+only&err=1", status_code=303)
-    if revoke_api_key(db, key_id):
+    count = delete_all_api_keys(db)
+    return RedirectResponse(f"/settings?flash=Deleted+{count}+API+keys+for+all+users", status_code=303)
+
+
+@api.post("/ui/api-keys/{key_id}/revoke")
+def ui_revoke_api_key(key_id: int, request: Request, db: Session = Depends(get_db)):
+    session_user = get_session_user(request, db)
+    if not session_user:
+        return RedirectResponse("/login", status_code=303)
+    if revoke_api_key(db, key_id, owner_email=session_user.email):
         return RedirectResponse("/settings?flash=API+key+revoked", status_code=303)
-    return RedirectResponse("/settings?flash=Key+not+found&err=1", status_code=303)
+    return RedirectResponse("/settings?flash=Key+not+found+or+already+revoked&err=1", status_code=303)
+
+
+@api.post("/ui/api-keys/{key_id}/regenerate")
+def ui_regenerate_api_key(key_id: int, request: Request, db: Session = Depends(get_db)):
+    session_user = get_session_user(request, db)
+    if not session_user:
+        return RedirectResponse("/login", status_code=303)
+    result = regenerate_api_key(db, key_id, owner_email=session_user.email)
+    if not result:
+        return RedirectResponse("/settings?flash=Key+not+found+for+this+account&err=1", status_code=303)
+    row, raw = result
+    request.session["flash_api_key"] = raw
+    request.session["flash_api_key_name"] = row.name
+    return RedirectResponse("/settings?flash=API+key+regenerated", status_code=303)
 
 
 @api.post("/ui/users/add")
@@ -1072,7 +1137,7 @@ async def api_start_scan(body: dict, db: Session = Depends(get_db)):
     return await run_linkedin_pipeline(
         db,
         user_id=uid,
-        max_posts=int(body.get("maxPosts") or 60),
+        max_posts=int(body.get("maxPosts") or 40),
         max_scrolls=int(body.get("maxScrolls") or 20),
     )
 
@@ -1090,6 +1155,19 @@ def api_get_scan(scan_id: int, db: Session = Depends(get_db)):
         "loginUrl": s.login_url,
         "error": s.error,
     }
+
+
+class McpPathMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") in {"http", "websocket"} and scope.get("path") == "/mcp":
+            scope = dict(scope)
+            scope["path"] = "/mcp/"
+            if scope.get("raw_path") == b"/mcp":
+                scope["raw_path"] = b"/mcp/"
+        await self.app(scope, receive, send)
 
 
 class IntegrationAuthMiddleware:
@@ -1124,17 +1202,25 @@ class IntegrationAuthMiddleware:
 
 def build_app() -> ASGIApp:
     mcp_asgi = mcp.streamable_http_app()
+
+    @asynccontextmanager
+    async def combined_lifespan(_app: Starlette):
+        async with api.router.lifespan_context(api):
+            async with mcp.session_manager.run():
+                yield
+
     combined = Starlette(
         routes=[
             Mount("/mcp", app=mcp_asgi),
             Mount("/", app=api),
         ],
-        lifespan=api.router.lifespan_context,
+        lifespan=combined_lifespan,
     )
+    normalized_paths = McpPathMiddleware(combined)
     # Session cookie for UI login (httponly). HTTPS on Azure → secure cookies.
     secure = os.getenv("SESSION_SECURE", "true").lower() in {"1", "true", "yes"}
     sessioned = SessionMiddleware(
-        combined,
+        normalized_paths,
         secret_key=secret_key(),
         session_cookie="mp_session",
         same_site="lax",

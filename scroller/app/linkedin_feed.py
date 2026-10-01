@@ -262,21 +262,29 @@ def _extract_posts_via_js(page: Page, max_posts: int) -> list[FeedPost]:
             if (/^Feed post actions/i.test(text)) continue;
             if (/recommended for you/i.test(text) && text.length < 80) continue;
 
+            // For reposts / "X liked this" engagement-surfaced items, `card` is the
+            // outer wrapper containing BOTH the social-context banner (the liker/
+            // commenter) and the actual embedded post nested inside. Scope author
+            // lookups to the real inner update when present, so the banner's actor
+            // is never mistaken for the post's real author. For a normal post,
+            // `card` already IS the update, so this nested search is a safe no-op.
+            const innerUpdate = card.querySelector('[data-view-name="feed-full-update"]') || card;
+
             let author = null;
-            const menu = card.querySelector('[data-view-name="feed-control-menu"]');
+            const menu = innerUpdate.querySelector('[data-view-name="feed-control-menu"]');
             if (menu) {
               const m = (menu.getAttribute('aria-label') || '').match(/post by (.+)$/i);
               if (m) author = cleanName(m[1]);
             }
             if (!author) {
-              const hide = card.querySelector('[data-view-name="feed-hide-post-action"]');
+              const hide = innerUpdate.querySelector('[data-view-name="feed-hide-post-action"]');
               if (hide) {
                 const m = (hide.getAttribute('aria-label') || '').match(/Hide post by (.+)$/i);
                 if (m) author = cleanName(m[1]);
               }
             }
             if (!author) {
-              for (const el of card.querySelectorAll('[aria-label]')) {
+              for (const el of innerUpdate.querySelectorAll('[aria-label]')) {
                 const label = el.getAttribute('aria-label') || '';
                 let m = label.match(/^(?:View )?(.+?)(?:['\\u2019]s profile|\\s+profile)$/i);
                 if (m) { author = cleanName(m[1]); if (author) break; }
@@ -287,7 +295,7 @@ def _extract_posts_via_js(page: Page, max_posts: int) -> list[FeedPost]:
               }
             }
             if (!author) {
-              const links = Array.from(card.querySelectorAll('a[href*="/in/"], a[href*="/company/"], a[href*="/school/"]'));
+              const links = Array.from(innerUpdate.querySelectorAll('a[href*="/in/"], a[href*="/company/"], a[href*="/school/"]'));
               for (const a of links) {
                 const t = cleanName((a.innerText || '').trim().split('\\n')[0]);
                 if (!t) continue;
@@ -298,7 +306,7 @@ def _extract_posts_via_js(page: Page, max_posts: int) -> list[FeedPost]:
               }
             }
             if (!author) {
-              const actor = card.querySelector('[data-view-name*="actor"], [data-control-name*="actor"], .update-components-actor__name, .feed-shared-actor__name');
+              const actor = innerUpdate.querySelector('[data-view-name*="actor"], [data-control-name*="actor"], .update-components-actor__name, .feed-shared-actor__name');
               if (actor) author = cleanName((actor.innerText || '').split('\\n')[0]);
             }
 
@@ -318,11 +326,26 @@ def _extract_posts_via_js(page: Page, max_posts: int) -> list[FeedPost]:
               // Allow lazy-loaded images with unknown size if URL looks like feed media
               const looksFeed = /feedshare|image-shrink|dms.image|thumbnail-shrink|videocover/i.test(src);
               if (!looksFeed && ((w && w < 120) || (h && h < 120))) continue;
-              src = src.split('?')[0];
-              if (imgSeen.has(src)) continue;
-              imgSeen.add(src);
+              // Dedupe on the bare URL, but keep the query string on the stored value —
+              // LinkedIn's CDN often requires a signed-access token there; stripping it
+              // produced URLs that looked captured but 403'd/expired when later rendered.
+              const bare = src.split('?')[0];
+              if (imgSeen.has(bare)) continue;
+              imgSeen.add(bare);
               images.push(src);
               if (images.length >= 6) break;
+            }
+            // LinkedIn native video posts render their preview via <video poster="...">,
+            // not <img> — the loop above never captured these, so video posts had zero
+            // images unconditionally.
+            for (const video of card.querySelectorAll('video')) {
+              if (images.length >= 6) break;
+              let src = video.poster || '';
+              if (!src || src.startsWith('data:')) continue;
+              const bare = src.split('?')[0];
+              if (imgSeen.has(bare)) continue;
+              imgSeen.add(bare);
+              images.push(src);
             }
 
             let socialProof = null;
@@ -832,8 +855,10 @@ def _scan_feed_sync(
                 # hit the target or burn most of the scroll budget — don't quit at 6–7.
                 target_floor = max(25, int(max_posts * 0.6))
                 if len(posts) < target_floor:
-                    # Must use a large share of scrolls before early-stop is allowed
-                    min_scrolls_before_stop = max(25, int(max_scrolls * 0.65))
+                    # Must use a large share of scrolls before early-stop is allowed.
+                    # Capped at max_scrolls itself — otherwise this could exceed the
+                    # loop's own iteration budget and permanently disable early-stop.
+                    min_scrolls_before_stop = min(max_scrolls, max(1, int(max_scrolls * 0.65)))
                     stale_limit = 28
                     if scrolls_done < min_scrolls_before_stop:
                         stale_limit = 999  # effectively disable early stop

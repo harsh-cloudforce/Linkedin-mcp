@@ -31,6 +31,7 @@ PUBLIC_PATH_PREFIXES = (
     "/static",
     "/mcp",
     "/api/integration",
+    "/.well-known",
 )
 
 

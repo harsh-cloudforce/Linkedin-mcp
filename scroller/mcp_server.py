@@ -142,9 +142,38 @@ async def _job_worker(job_id: str, kwargs: dict[str, Any]) -> None:
         startedAt=datetime.now(timezone.utc).isoformat(),
     )
     login_token: str | None = None
+
+    def _mark_progress(info: dict[str, Any]) -> None:
+        loop = _MAIN_LOOP
+        if loop is None:
+            return
+
+        async def _upd() -> None:
+            scroll = info.get("scroll")
+            max_s = info.get("maxScrolls")
+            count = int(info.get("postCount") or 0)
+            msg = "Scrolling LinkedIn feed…"
+            if scroll and max_s:
+                msg = f"Scrolling feed ({scroll}/{max_s}) — {count} posts so far"
+            elif count:
+                msg = f"Scanning feed — {count} posts so far"
+            await _set_job(
+                job_id,
+                status="running",
+                loginUrl=None,
+                loginRequired=False,
+                postCount=count,
+                message=msg,
+                poll_after_seconds=5,
+            )
+
+        asyncio.run_coroutine_threadsafe(_upd(), loop)
+
     try:
         # Fast path: headless with saved cookies / profile — no VNC
-        payload = await _run_scan(**{**kwargs, "headed": False, "login_wait_seconds": 30})
+        payload = await _run_scan(
+            **{**kwargs, "headed": False, "login_wait_seconds": 30, "on_progress": _mark_progress}
+        )
         if not payload.get("loginRequired"):
             post_count = int(payload.get("postCount") or 0)
             if post_count <= 0:
@@ -235,32 +264,6 @@ async def _job_worker(job_id: str, kwargs: dict[str, Any]) -> None:
                         "Open loginUrl in your browser, sign into LinkedIn (and 2FA), "
                         "then keep this chat open — the scan continues automatically."
                     ),
-                    poll_after_seconds=5,
-                )
-
-            asyncio.run_coroutine_threadsafe(_upd(), loop)
-
-        def _mark_progress(info: dict[str, Any]) -> None:
-            loop = _MAIN_LOOP
-            if loop is None:
-                return
-
-            async def _upd() -> None:
-                scroll = info.get("scroll")
-                max_s = info.get("maxScrolls")
-                count = int(info.get("postCount") or 0)
-                msg = "Scrolling LinkedIn feed…"
-                if scroll and max_s:
-                    msg = f"Scrolling feed ({scroll}/{max_s}) — {count} posts so far"
-                elif count:
-                    msg = f"Scanning feed — {count} posts so far"
-                await _set_job(
-                    job_id,
-                    status="running",
-                    loginUrl=None,
-                    loginRequired=False,
-                    postCount=count,
-                    message=msg,
                     poll_after_seconds=5,
                 )
 
